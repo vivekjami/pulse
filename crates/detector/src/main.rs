@@ -7,6 +7,10 @@
 
 mod classify;
 mod gates;
+mod patrol;
+mod radar;
+mod revert;
+mod settle;
 mod state;
 
 use std::time::Duration;
@@ -25,6 +29,10 @@ const READ_COUNT: usize = 200;
 const READ_BLOCK_MS: usize = 2_000;
 /// Consumer name within the group.
 const CONSUMER: &str = "detector-1";
+/// How often settlement and the expiry sweep run.
+const SETTLE_INTERVAL: Duration = Duration::from_secs(15);
+/// Gate-1-only candidates, published as the Surge watchlist (Phase 5).
+const WATCHLIST: &str = "pulse:watchlist";
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -56,6 +64,7 @@ async fn main() -> Result<()> {
     }
 
     let mut stats = Stats::default();
+    let mut last_settle = std::time::Instant::now();
     loop {
         match tick(&mut con, &pool, &t, &domain_suffix, &mut stats).await {
             Ok(0) => {}
@@ -63,6 +72,21 @@ async fn main() -> Result<()> {
             Err(err) => {
                 tracing::error!(error = format!("{err:#}"), "detector batch failed");
                 tokio::time::sleep(Duration::from_secs(2)).await;
+            }
+        }
+
+        // Settlement runs on the same loop rather than a cron: a 10-minute
+        // deadline settled seconds after it expires is what makes the game feel
+        // like reality grading you.
+        if last_settle.elapsed() > SETTLE_INTERVAL {
+            last_settle = std::time::Instant::now();
+            let now_ms = chrono::Utc::now().timestamp_millis();
+            match settle::settle_due_calls(&mut con, &pool, now_ms).await {
+                Ok(n) => stats.settled += n as u64,
+                Err(err) => tracing::error!(error = format!("{err:#}"), "patrol settlement failed"),
+            }
+            if let Err(err) = settle::sweep_expired_surge(&pool).await {
+                tracing::error!(error = format!("{err:#}"), "surge expiry sweep failed");
             }
         }
     }
@@ -79,6 +103,14 @@ struct Stats {
     undated: u64,
     /// Events from wikis outside the detection scope.
     out_of_scope: u64,
+    /// Strong reverts parsed (Phase 4).
+    reverts: u64,
+    /// Edit wars flagged (Phase 4).
+    wars: u64,
+    /// Edits queued for Vandal Patrol (Phase 3).
+    patrol_queued: u64,
+    /// Patrol calls settled by reality (Phase 3).
+    settled: u64,
     last_report: Option<std::time::Instant>,
 }
 
@@ -226,6 +258,10 @@ fn report(stats: &mut Stats) {
             confirmed = stats.confirmed,
             undated = stats.undated,
             out_of_scope = stats.out_of_scope,
+            reverts = stats.reverts,
+            wars = stats.wars,
+            patrol_queued = stats.patrol_queued,
+            settled = stats.settled,
             "detector throughput"
         );
     }
@@ -281,6 +317,64 @@ async fn handle(
     }
 
     let article = ev.article_key();
+
+    // ── Phase 4: conflict radar ────────────────────────────────────────────
+    // Every article edit is the denominator of C_a = reverts / edits.
+    radar::record_edit(con, &article, now_ms).await?;
+
+    if let Some(rv) = revert::parse(&ev.comment) {
+        match rv.confidence {
+            revert::Confidence::Strong => {
+                stats.reverts += 1;
+
+                // Settlement lookup (Phase 3) and the permanent incident row.
+                settle::record_revert_for_settlement(con, &article, rv.rev_id, now_ms).await?;
+                let score = radar::record_revert(con, &article, now_ms).await?;
+
+                if let Some(reverted) = rv.reverted_user.as_deref() {
+                    sqlx::query(
+                        "INSERT INTO revert_incidents (article, reverter, reverted, rev_id, at)
+                         VALUES ($1, $2, $3, $4, $5)",
+                    )
+                    .bind(&article)
+                    .bind(&ev.user)
+                    .bind(reverted)
+                    .bind(rv.rev_id)
+                    .bind(chrono::Utc::now())
+                    .execute(pool)
+                    .await
+                    .context("inserting revert incident")?;
+
+                    let edge = radar::Edge {
+                        reverter: ev.user.clone(),
+                        reverted: reverted.to_string(),
+                        at_ms: now_ms,
+                    };
+                    if radar::record_edge(con, &article, &edge, now_ms).await? {
+                        stats.wars += 1;
+                        tracing::info!(
+                            %article,
+                            reverter = %ev.user,
+                            %reverted,
+                            controversy = format!("{score:.2}"),
+                            "EDIT WAR"
+                        );
+                    }
+                }
+            }
+            // §4: weak signals only bump the controversy index, never settle.
+            revert::Confidence::Weak => {
+                radar::record_revert(con, &article, now_ms).await?;
+            }
+        }
+    }
+
+    // ── Phase 3: Vandal Patrol queue ───────────────────────────────────────
+    if patrol::is_eligible(&ev) {
+        patrol::enqueue(con, &ev).await?;
+        stats.patrol_queued += 1;
+    }
+
     // Window members must be unique per event; meta.id is the stream's own uuid.
     let member = ev
         .meta
@@ -316,6 +410,27 @@ async fn handle(
 
     let g2 = gates::gate2(&st.tally, t);
     if !g2.fired {
+        // Phase 5: a gate-1-only article is a public leading indicator — this is
+        // what makes a Surge bet skill rather than luck.
+        let _: Result<(), redis::RedisError> = redis::pipe()
+            .atomic()
+            .cmd("ZADD")
+            .arg(WATCHLIST)
+            .arg(now_ms)
+            .arg(&article)
+            .ignore()
+            .cmd("ZREMRANGEBYSCORE")
+            .arg(WATCHLIST)
+            .arg("-inf")
+            .arg(now_ms - 3_600_000)
+            .ignore()
+            .cmd("EXPIRE")
+            .arg(WATCHLIST)
+            .arg(3_600)
+            .ignore()
+            .query_async::<()>(con)
+            .await;
+
         // At info, not debug: this only fires on a gate-1 pass (rare), and it is
         // the telemetry the live tuning pass reads to calibrate k1 and decide
         // whether Gate 2's floors are right (PLAN.md budgets 45 min for this).
@@ -403,6 +518,26 @@ async fn handle(
         .query_async::<()>(con)
         .await
         .context("publishing confirmation")?;
+
+    // Phase 3: First Responder credit lands on the receipt itself.
+    match settle::credit_first_flagger(con, pool, &article, row.0).await {
+        Ok(Some(player_id)) => {
+            tracing::info!(player_id, event_id = row.0, "first responder credited")
+        }
+        Ok(None) => {}
+        Err(err) => tracing::error!(error = format!("{err:#}"), "crediting first flagger"),
+    }
+
+    // Phase 5: pay every Surge bet placed before this detection.
+    match settle::settle_surge_on_confirmation(pool, &article, detected_at).await {
+        Ok(n) if n > 0 => tracing::info!(paid = n, %article, "SURGE BETS SETTLED"),
+        Ok(_) => {}
+        Err(err) => tracing::error!(error = format!("{err:#}"), "settling surge bets"),
+    }
+
+    // It confirmed, so it is no longer a candidate.
+    let _: Result<i64, redis::RedisError> =
+        redis::cmd("ZREM").arg(WATCHLIST).arg(&article).query_async(con).await;
 
     stats.confirmed += 1;
     tracing::info!(
