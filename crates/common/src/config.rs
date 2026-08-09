@@ -49,6 +49,24 @@ pub fn stream_url() -> String {
     optional("STREAM_URL", DEFAULT_STREAM_URL)
 }
 
+/// Domain suffix the DETECTOR restricts itself to. Empty string = no filter.
+///
+/// This is a judgment call the architecture doc does not make explicitly, so it
+/// is configurable rather than hardcoded. Rationale: §4's classification keys off
+/// encyclopedia category conventions ("2026 deaths"), and the Gate 3 design
+/// resolves an article to a Wikidata QID and looks for the same entity bursting
+/// across ≥3 language wikis — both of which presuppose Wikipedia language
+/// editions as the detection target, with Wikidata as the entity resolver rather
+/// than a thing to detect on. Left unfiltered, essentially every Gate 1
+/// candidate is a single-editor `wikidatawiki:Q…` item under semi-automated
+/// editing, which Gate 2 then correctly discards.
+///
+/// The live wall is deliberately NOT filtered — the README promises "every edit
+/// on every Wikimedia wiki", and that stays true.
+pub fn detect_domain_suffix() -> String {
+    optional("PULSE_DETECT_DOMAIN_SUFFIX", ".wikipedia.org")
+}
+
 /// Install the tracing subscriber. `RUST_LOG` controls verbosity;
 /// default `info` so Zerops log capture stays useful without being noisy.
 pub fn init_tracing(service: &str) {

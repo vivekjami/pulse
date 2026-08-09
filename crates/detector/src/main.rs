@@ -33,7 +33,8 @@ async fn main() -> Result<()> {
     let valkey_url = common::config::valkey_url().map_err(anyhow::Error::msg)?;
     let database_url = common::config::database_url().map_err(anyhow::Error::msg)?;
     let t = Tunables::from_env();
-    tracing::info!(?t, "detector tunables");
+    let domain_suffix = common::config::detect_domain_suffix();
+    tracing::info!(?t, %domain_suffix, "detector tunables");
 
     let pool = common::db::connect(&database_url, 4).await?;
     common::db::ensure_schema(&pool).await?;
@@ -54,7 +55,7 @@ async fn main() -> Result<()> {
 
     let mut stats = Stats::default();
     loop {
-        match tick(&mut con, &pool, &t, &mut stats).await {
+        match tick(&mut con, &pool, &t, &domain_suffix, &mut stats).await {
             Ok(0) => {}
             Ok(n) => tracing::debug!(processed = n, "batch"),
             Err(err) => {
@@ -74,6 +75,8 @@ struct Stats {
     confirmed: u64,
     /// Events the stream gave us no usable timestamp for.
     undated: u64,
+    /// Events from wikis outside the detection scope.
+    out_of_scope: u64,
     last_report: Option<std::time::Instant>,
 }
 
@@ -126,6 +129,7 @@ async fn tick(
     con: &mut MultiplexedConnection,
     pool: &PgPool,
     t: &Tunables,
+    domain_suffix: &str,
     stats: &mut Stats,
 ) -> Result<usize> {
     let reply: redis::streams::StreamReadReply = redis::cmd("XREADGROUP")
@@ -151,7 +155,7 @@ async fn tick(
             let id = std::mem::take(&mut entry.id);
             if let Some(v) = entry.map.remove("payload") {
                 if let Ok(payload) = redis::from_redis_value::<String>(v) {
-                    if let Err(err) = handle(con, pool, t, stats, &payload).await {
+                    if let Err(err) = handle(con, pool, t, domain_suffix, stats, &payload).await {
                         // A single malformed event must not stall the group.
                         tracing::debug!(error = %err, "event handling failed");
                     }
@@ -175,6 +179,19 @@ async fn tick(
     Ok(processed)
 }
 
+/// Is this event on a wiki the detector is scoped to?
+/// An empty suffix disables the filter entirely.
+fn in_scope(ev: &RcEvent, domain_suffix: &str) -> bool {
+    if domain_suffix.is_empty() {
+        return true;
+    }
+    match ev.server_name.as_deref() {
+        Some(name) => name.ends_with(domain_suffix),
+        // Cannot verify scope without a domain, so do not guess.
+        None => false,
+    }
+}
+
 fn report(stats: &mut Stats) {
     let due = stats
         .last_report
@@ -188,6 +205,7 @@ fn report(stats: &mut Stats) {
             gate2_passed = stats.gate2,
             confirmed = stats.confirmed,
             undated = stats.undated,
+            out_of_scope = stats.out_of_scope,
             "detector throughput"
         );
     }
@@ -198,11 +216,18 @@ async fn handle(
     con: &mut MultiplexedConnection,
     pool: &PgPool,
     t: &Tunables,
+    domain_suffix: &str,
     stats: &mut Stats,
     payload: &str,
 ) -> Result<()> {
     let ev: RcEvent = serde_json::from_str(payload).context("parsing event")?;
     stats.seen += 1;
+
+    // Detection target filter — see config::detect_domain_suffix for why.
+    if !in_scope(&ev, domain_suffix) {
+        stats.out_of_scope += 1;
+        return Ok(());
+    }
 
     // Event time, not wall-clock: see RcEvent::event_time_ms. An event the
     // stream never timestamped is unusable for windowing, so it is counted and
@@ -370,4 +395,48 @@ async fn handle(
         "CONFIRMED BURST"
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ev(server_name: Option<&str>) -> RcEvent {
+        let json = match server_name {
+            Some(n) => format!(
+                r#"{{"meta":{{}},"type":"edit","title":"X","wiki":"w","server_name":"{n}"}}"#
+            ),
+            None => r#"{"meta":{},"type":"edit","title":"X","wiki":"w"}"#.to_string(),
+        };
+        serde_json::from_str(&json).unwrap()
+    }
+
+    #[test]
+    fn scope_admits_wikipedia_language_editions() {
+        for host in ["en.wikipedia.org", "hi.wikipedia.org", "ceb.wikipedia.org"] {
+            assert!(in_scope(&ev(Some(host)), ".wikipedia.org"), "{host}");
+        }
+    }
+
+    #[test]
+    fn scope_excludes_wikidata_commons_and_project_wikis() {
+        // These dominate Gate 1 with single-editor semi-automated edits.
+        for host in [
+            "www.wikidata.org",
+            "commons.wikimedia.org",
+            "meta.wikimedia.org",
+            "en.wiktionary.org",
+        ] {
+            assert!(!in_scope(&ev(Some(host)), ".wikipedia.org"), "{host}");
+        }
+    }
+
+    #[test]
+    fn scope_is_disableable_and_fails_closed_without_a_domain() {
+        // Empty suffix = detect on everything.
+        assert!(in_scope(&ev(Some("www.wikidata.org")), ""));
+        assert!(in_scope(&ev(None), ""));
+        // With a filter set, an event carrying no domain cannot be verified.
+        assert!(!in_scope(&ev(None), ".wikipedia.org"));
+    }
 }
