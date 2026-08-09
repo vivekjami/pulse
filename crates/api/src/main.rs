@@ -117,7 +117,9 @@ async fn pump_stream(url: String, stream: &'static str, tx: broadcast::Sender<St
     loop {
         match pump_stream_once(&url, stream, &tx).await {
             Ok(()) => tracing::warn!(stream, "bus reader ended — reconnecting"),
-            Err(err) => tracing::error!(stream, error = %err, "bus reader failed"),
+            // {:#} prints the whole anyhow chain; the outermost context alone
+            // said only "XREAD from bus" and hid the real deserialization error.
+            Err(err) => tracing::error!(stream, error = format!("{err:#}"), "bus reader failed"),
         }
         tokio::time::sleep(backoff).await;
         backoff = (backoff * 2).min(Duration::from_secs(30));
@@ -138,7 +140,12 @@ async fn pump_stream_once(
 
     let mut cursor = "$".to_string();
     loop {
-        let reply: redis::streams::StreamReadReply = redis::cmd("XREAD")
+        // Option<_> is load-bearing: a BLOCK that expires with no new entries
+        // replies nil, which does NOT deserialize into StreamReadReply. Reading
+        // it as the concrete type made every timeout look like a fatal error, so
+        // a quiet stream (`confirmed` sees a few frames an hour) crash-looped its
+        // reader once every 5 seconds and never delivered anything.
+        let reply: Option<redis::streams::StreamReadReply> = redis::cmd("XREAD")
             .arg("BLOCK")
             .arg(5_000)
             .arg("COUNT")
@@ -149,6 +156,10 @@ async fn pump_stream_once(
             .query_async(&mut con)
             .await
             .context("XREAD from bus")?;
+
+        let Some(reply) = reply else {
+            continue; // block expired, nothing new — normal on a quiet stream
+        };
 
         for stream in reply.keys {
             for mut entry in stream.ids {

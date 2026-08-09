@@ -59,7 +59,7 @@ async fn main() -> Result<()> {
             Ok(0) => {}
             Ok(n) => tracing::debug!(processed = n, "batch"),
             Err(err) => {
-                tracing::error!(error = %err, "detector batch failed");
+                tracing::error!(error = format!("{err:#}"), "detector batch failed");
                 tokio::time::sleep(Duration::from_secs(2)).await;
             }
         }
@@ -132,7 +132,10 @@ async fn tick(
     domain_suffix: &str,
     stats: &mut Stats,
 ) -> Result<usize> {
-    let reply: redis::streams::StreamReadReply = redis::cmd("XREADGROUP")
+    // Same nil-on-timeout contract as XREAD — see the api's bus reader. This is
+    // latent rather than visible here only because the edits stream is never
+    // quiet; a lull longer than the BLOCK would otherwise look like a failure.
+    let reply: Option<redis::streams::StreamReadReply> = redis::cmd("XREADGROUP")
         .arg("GROUP")
         .arg(keys::GROUP_DETECTOR)
         .arg(CONSUMER)
@@ -149,6 +152,10 @@ async fn tick(
 
     let mut processed = 0usize;
     let mut ack_ids: Vec<String> = Vec::new();
+
+    let Some(reply) = reply else {
+        return Ok(0); // block expired with nothing new
+    };
 
     for stream in reply.keys {
         for mut entry in stream.ids {
