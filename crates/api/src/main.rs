@@ -126,6 +126,17 @@ async fn pump_stream(url: String, stream: &'static str, tx: broadcast::Sender<St
     }
 }
 
+/// A blocking XREAD must outlive the client's own response timeout.
+///
+/// redis-rs defaults that timeout to 500ms, so `BLOCK 5000` was cancelled by the
+/// client every single time no data arrived inside half a second — the reader
+/// then treated it as a fatal error and reconnected. On the quiet `confirmed`
+/// stream that meant a crash-loop that never delivered a frame; on `edits` it was
+/// invisible because data almost always arrives first.
+fn blocking_conn_config() -> redis::AsyncConnectionConfig {
+    redis::AsyncConnectionConfig::new().set_response_timeout(Some(Duration::from_secs(30)))
+}
+
 async fn pump_stream_once(
     url: &str,
     stream_key: &str,
@@ -133,7 +144,7 @@ async fn pump_stream_once(
 ) -> Result<()> {
     let client = redis::Client::open(url).context("opening valkey client")?;
     let mut con = client
-        .get_multiplexed_async_connection()
+        .get_multiplexed_async_connection_with_config(&blocking_conn_config())
         .await
         .context("connecting to valkey")?;
     tracing::info!(stream = stream_key, "bus reader connected");
