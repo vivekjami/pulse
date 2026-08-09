@@ -33,21 +33,22 @@ zerops:
       deployFiles: [target/release/~detector]
     run:
       os: ubuntu
+      # redis-tools is for operating the detector (inspecting windows, resetting
+      # baselines during a tuning pass). prepareCommands, not an ad-hoc install:
+      # a deploy replaces the container, so ad-hoc packages vanish.
+      prepareCommands:
+        - sudo apt-get update -qq && sudo apt-get install -y -qq redis-tools
       envVariables:
         DATABASE_URL: postgresql://${db_user}:${db_password}@${db_hostname}:${db_port}/${db_dbName}
         VALKEY_URL: ${cache_connectionString}
         RUST_LOG: info
-        # §4 gate constants. PLAN.md Phase 2 requires these tunable without a
-        # rebuild: change them here (or via zerops_env) and restart — a Rust
-        # rebuild costs ~6 minutes, which is the whole live-tuning budget.
-        PULSE_K1: 8.0
-        PULSE_MIN_WINDOW_EDITS: 6.0
-        PULSE_EPSILON: 0.5
-        PULSE_EWMA_ALPHA: 0.3
-        PULSE_MIN_EDITORS: 5
-        PULSE_MIN_REGISTERED: 2
-        PULSE_MAX_TOP_SHARE: 0.5
-        PULSE_COOLDOWN_SECS: 21600
+        # NOTE: the §4 gate constants (PULSE_K1, PULSE_EPSILON, …) are deliberately
+        # NOT declared here. A key baked into run.envVariables is owned by this
+        # file and cannot be overridden at service scope, so declaring them would
+        # make every tuning change a ~9-minute Rust rebuild — the opposite of
+        # PLAN.md's "tunable without rebuild". The code carries the §4 defaults;
+        # override any of them with `zerops_env set serviceHostname=detector`,
+        # which restarts the service in seconds.
       start: ./detector
 
   - setup: api

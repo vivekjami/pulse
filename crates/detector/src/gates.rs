@@ -17,6 +17,13 @@ pub struct Tunables {
     /// regardless of how anomalous the ratio looks (§4: ≥6 edits / 5 min).
     pub min_window_edits: f64,
     /// Guards division when an article has no history (§4's ε).
+    ///
+    /// Not a free parameter: for a cold article the ratio test reduces to
+    /// `edits > rate_window_minutes · k1 · ε`, so ε is what decides the
+    /// detection point of a previously-quiet page. §4 puts its floor at 6 edits
+    /// per 5 minutes, and ε = 0.15 makes the ratio bind at exactly that number
+    /// (5 · 8 · 0.15 = 6). Larger values silently raise the real bar — ε = 0.5
+    /// demands >20 edits/5min and nothing fires on live traffic.
     pub epsilon: f64,
     /// Per-article EWMA smoothing (§4: α = 0.3, 1-minute buckets).
     pub ewma_alpha: f64,
@@ -41,7 +48,7 @@ impl Default for Tunables {
         Self {
             k1: 8.0,
             min_window_edits: 6.0,
-            epsilon: 0.5,
+            epsilon: 0.15,
             ewma_alpha: 0.3,
             global_alpha: 2.0 / 61.0,
             min_editors: 5,
@@ -239,23 +246,23 @@ mod tests {
     }
 
     #[test]
-    fn with_default_tunables_the_ratio_is_stricter_than_the_edit_floor() {
-        // Worth stating explicitly, because it is easy to misread §4 as if the
-        // "≥6 edits / 5 min" floor were the binding constraint. It is not, at
-        // the default ε and k1: clearing the ratio against a cold article needs
-        // rate_window_minutes · k1 · ε = 5 · 8 · 0.5 = 20 edits. So anything the
-        // floor would reject (<6) the ratio has already rejected.
+    fn the_defaults_put_the_ratio_and_the_floor_at_the_same_point() {
+        // ε is chosen so the two Gate-1 conditions agree rather than one
+        // silently dominating: a cold article clears the ratio at
+        // rate_window_minutes · k1 · ε = 5 · 8 · 0.15 = 6 edits, which is
+        // exactly §4's "≥6 edits / 5 min" floor. Detection therefore begins at
+        // the number the spec states, instead of the >20 that ε = 0.5 implied.
         let t = tun();
-        for edits in [5.0, 6.0, 20.0] {
-            let g = gate1(edits, 0.01, 100.0, 100.0, &t);
-            assert!(!g.fired, "{edits} edits should not fire: {g:?}");
-            assert!(
-                g.anomaly <= g.threshold,
-                "the ratio, not the floor, is what rejects {edits} edits: {g:?}"
-            );
-        }
-        // 21 clears it; the floor never got a say.
-        assert!(gate1(21.0, 0.01, 100.0, 100.0, &t).fired);
+        assert!((5.0 * t.k1 * t.epsilon - t.min_window_edits).abs() < 1e-9);
+
+        // Below the stated floor: rejected.
+        assert!(!gate1(5.0, 0.0, 100.0, 100.0, &t).fired);
+        // At the floor the ratio is exactly at the bar, and `>` is strict.
+        let at = gate1(6.0, 0.0, 100.0, 100.0, &t);
+        assert!((at.anomaly - at.threshold).abs() < 1e-9, "{at:?}");
+        assert!(!at.fired, "strictly greater, so the boundary itself does not fire");
+        // One edit past it: detected.
+        assert!(gate1(7.0, 0.0, 100.0, 100.0, &t).fired);
     }
 
     #[test]
