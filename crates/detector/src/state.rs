@@ -223,13 +223,26 @@ pub async fn load_state(
         .await
         .context("counting window")? as f64;
 
-    let pairs: Vec<(String, u32)> = redis::cmd("HGETALL")
-        .arg(keys::editors(article, keys::bucket_10m(now_ms)))
-        .query_async::<std::collections::HashMap<String, u32>>(con)
-        .await
-        .context("reading editor tally")?
-        .into_iter()
-        .collect();
+    // §4 evaluates Gate 2 "within the same window", but §3.1 buckets the editor
+    // key per 10 minutes so it expires cleanly. Reading only the current bucket
+    // would reset an in-progress burst's editor count to zero at every boundary
+    // — precisely when a real event is still erupting. Merge the current and
+    // previous buckets: the key layout stays exactly as §3.1 specifies, and the
+    // effective window (10-20 min) covers the 5-minute rate window it is meant
+    // to describe.
+    let bucket = keys::bucket_10m(now_ms);
+    let mut merged: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
+    for b in [bucket - 1, bucket] {
+        let part: std::collections::HashMap<String, u32> = redis::cmd("HGETALL")
+            .arg(keys::editors(article, b))
+            .query_async(con)
+            .await
+            .context("reading editor tally")?;
+        for (user, n) in part {
+            *merged.entry(user).or_insert(0) += n;
+        }
+    }
+    let pairs: Vec<(String, u32)> = merged.into_iter().collect();
 
     let ewma = update_ewma(con, article, now_ms, t).await?;
 
