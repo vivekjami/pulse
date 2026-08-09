@@ -242,9 +242,14 @@ pub async fn load_state(
 
 /// Advance the per-article EWMA at most once per 1-minute bucket (§4: α = 0.3).
 ///
-/// The sample is the *previous* completed minute's edit count, so a burst in
-/// progress never inflates its own baseline — which would mask the very anomaly
-/// Gate 1 is looking for.
+/// The sample is deliberately LAGGED past the rate window rather than taken from
+/// the immediately-preceding minute. §4's α = 0.3 on 1-minute buckets has a time
+/// constant of ~3 minutes, which is shorter than the 5-minute rate window, so an
+/// unlagged baseline absorbs the burst it is supposed to be measured against:
+/// a quiet article taking 6 edits/min never exceeds a 1.4x anomaly, and Gate 1
+/// can never fire. Sampling `rate_window_secs + 1` minutes back keeps μ_a a
+/// pre-burst baseline, so a burst is visible for the length of its window and
+/// only stops firing once the elevated rate becomes the article's new normal.
 async fn update_ewma(
     con: &mut MultiplexedConnection,
     article: &str,
@@ -252,7 +257,8 @@ async fn update_ewma(
     t: &Tunables,
 ) -> Result<f64> {
     let bucket = keys::bucket_1m(now_ms);
-    let prev_bucket = bucket - 1;
+    let lag = t.rate_window_secs / 60 + 1;
+    let prev_bucket = bucket - lag;
 
     let stored: Option<f64> = redis::cmd("HGET")
         .arg(keys::EWMA)
@@ -273,7 +279,7 @@ async fn update_ewma(
     if last.map_or(true, |b| prev_bucket > b) {
         let win = keys::window(article);
         let from = prev_bucket * 60_000;
-        let to = bucket * 60_000 - 1;
+        let to = (prev_bucket + 1) * 60_000 - 1;
         let sample: i64 = redis::cmd("ZCOUNT")
             .arg(&win)
             .arg(from)

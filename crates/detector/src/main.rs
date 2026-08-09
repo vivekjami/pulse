@@ -260,12 +260,21 @@ async fn handle(
     }
     stats.gate1 += 1;
     let gate1_at = chrono::Utc::now();
+    tracing::info!(
+        %article,
+        window_edits = g1.window_edits,
+        ewma = format!("{:.2}", st.ewma),
+        anomaly = format!("{:.1}x", g1.anomaly),
+        threshold = format!("{:.1}", g1.threshold),
+        "gate1 candidate"
+    );
 
     let g2 = gates::gate2(&st.tally, t);
     if !g2.fired {
-        // Logged at debug so live tuning can watch what is being rejected and
-        // why, which is how k1 gets calibrated (PLAN.md budgets 45 min for it).
-        tracing::debug!(
+        // At info, not debug: this only fires on a gate-1 pass (rare), and it is
+        // the telemetry the live tuning pass reads to calibrate k1 and decide
+        // whether Gate 2's floors are right (PLAN.md budgets 45 min for this).
+        tracing::info!(
             %article,
             editors = g2.distinct_editors,
             registered = g2.registered_editors,
