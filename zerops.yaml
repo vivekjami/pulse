@@ -82,6 +82,10 @@ zerops:
         # If this cross-service ref doesn't resolve, main.ts derives the api
         # origin from its own hostname instead, so the wall connects either way.
         VITE_API_BASE: ${api_zeropsSubdomain}
+        # Absolute base for the og:/twitter: tags. Crawlers do not resolve
+        # relative image URLs, and Vite substitutes %VITE_SITE_URL% in the HTML
+        # at build time, so the social card is correct without a hardcoded host.
+        VITE_SITE_URL: ${web_zeropsSubdomain}
       buildCommands:
         - cd web && npm ci
         - cd web && npm run build

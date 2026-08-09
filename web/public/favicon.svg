@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Pulse">
+  <!-- Same tokens as style.css: --bg #0a0c10, --accent #ff4d6d. -->
+  <rect width="64" height="64" rx="14" fill="#0a0c10" />
+  <!-- One heartbeat trace: the wall's flatline broken by a burst. -->
+  <path
+    d="M6 34 H20 l4.5 -15 L31 47 l5.5 -21 L42 34 H58"
+    fill="none"
+    stroke="#ff4d6d"
+    stroke-width="5.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>

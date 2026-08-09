@@ -121,6 +121,7 @@ main {
 }
 
 .wall-meta {
+  font-variant-numeric: tabular-nums;
   font-family: var(--mono);
   font-size: 0.72rem;
   color: var(--muted);
@@ -367,6 +368,7 @@ a.card-title:hover {
 }
 
 .fact {
+  font-variant-numeric: tabular-nums;
   font-family: var(--mono);
   font-size: 0.72rem;
   color: var(--muted);
