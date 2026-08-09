@@ -19,7 +19,7 @@ use anyhow::{Context, Result};
 use common::keys;
 use common::RcEvent;
 use gates::Tunables;
-use redis::aio::MultiplexedConnection;
+use redis::aio::ConnectionManager;
 use serde_json::json;
 use sqlx::postgres::PgPool;
 
@@ -50,8 +50,7 @@ async fn main() -> Result<()> {
     let client = redis::Client::open(valkey_url).context("opening valkey client")?;
     // The response timeout must exceed the XREADGROUP BLOCK, or the client
     // cancels its own blocking read — see blocking_conn_config.
-    let mut con = client
-        .get_multiplexed_async_connection_with_config(&blocking_conn_config())
+    let mut con = redis::aio::ConnectionManager::new_with_config(client, blocking_conn_config())
         .await
         .context("connecting to valkey")?;
 
@@ -115,7 +114,7 @@ struct Stats {
 }
 
 /// Create the consumer group, tolerating "already exists".
-async fn ensure_group(con: &mut MultiplexedConnection) -> Result<()> {
+async fn ensure_group(con: &mut ConnectionManager) -> Result<()> {
     let res: Result<(), redis::RedisError> = redis::cmd("XGROUP")
         .arg("CREATE")
         .arg(keys::BUS_EDITS)
@@ -136,7 +135,7 @@ async fn ensure_group(con: &mut MultiplexedConnection) -> Result<()> {
 
 /// XAUTOCLAIM entries idle longer than a minute — a redeploy leaves pending
 /// entries owned by a container that no longer exists.
-async fn claim_stale(con: &mut MultiplexedConnection) -> Result<usize> {
+async fn claim_stale(con: &mut ConnectionManager) -> Result<usize> {
     let reply: redis::Value = redis::cmd("XAUTOCLAIM")
         .arg(keys::BUS_EDITS)
         .arg(keys::GROUP_DETECTOR)
@@ -160,7 +159,7 @@ async fn claim_stale(con: &mut MultiplexedConnection) -> Result<usize> {
 
 /// One XREADGROUP batch.
 async fn tick(
-    con: &mut MultiplexedConnection,
+    con: &mut ConnectionManager,
     pool: &PgPool,
     t: &Tunables,
     domain_suffix: &str,
@@ -227,8 +226,8 @@ async fn tick(
 /// then treated it as a fatal error and reconnected. On the quiet `confirmed`
 /// stream that meant a crash-loop that never delivered a frame; on `edits` it was
 /// invisible because data almost always arrives first.
-fn blocking_conn_config() -> redis::AsyncConnectionConfig {
-    redis::AsyncConnectionConfig::new().set_response_timeout(Some(Duration::from_secs(30)))
+fn blocking_conn_config() -> redis::aio::ConnectionManagerConfig {
+    redis::aio::ConnectionManagerConfig::new().set_response_timeout(Some(Duration::from_secs(30)))
 }
 
 /// Is this event on a wiki the detector is scoped to?
@@ -269,7 +268,7 @@ fn report(stats: &mut Stats) {
 
 /// Process one raw event.
 async fn handle(
-    con: &mut MultiplexedConnection,
+    con: &mut ConnectionManager,
     pool: &PgPool,
     t: &Tunables,
     domain_suffix: &str,

@@ -13,7 +13,7 @@
 
 use anyhow::{Context, Result};
 use common::keys;
-use redis::aio::MultiplexedConnection;
+use redis::aio::ConnectionManager;
 
 use crate::gates::{EditorTally, Tunables};
 
@@ -52,7 +52,7 @@ const GLOBAL_EWMA_KEY: &str = "pulse:global:ewma";
 
 /// Count one event toward the global stream rate (§3.1: EXPIRE 10m).
 pub async fn bump_global_rate(
-    con: &mut MultiplexedConnection,
+    con: &mut ConnectionManager,
     now_ms: i64,
 ) -> Result<()> {
     let key = keys::global_rate(keys::bucket_1m(now_ms));
@@ -77,7 +77,7 @@ pub async fn bump_global_rate(
 /// The previous bucket is used rather than the current one because the current
 /// minute is still filling and would always read low.
 pub async fn global_rate_and_baseline(
-    con: &mut MultiplexedConnection,
+    con: &mut ConnectionManager,
     now_ms: i64,
     t: &Tunables,
 ) -> Result<(f64, f64)> {
@@ -118,7 +118,7 @@ pub async fn global_rate_and_baseline(
 
 /// Record one non-bot article edit into the window and the editor tally.
 pub async fn record_edit(
-    con: &mut MultiplexedConnection,
+    con: &mut ConnectionManager,
     article: &str,
     user: &str,
     member: &str,
@@ -183,7 +183,7 @@ pub async fn record_edit(
 
 /// Note that an article was added to a category (§4 classification evidence).
 pub async fn record_category(
-    con: &mut MultiplexedConnection,
+    con: &mut ConnectionManager,
     article: &str,
     category: &str,
     t: &Tunables,
@@ -207,7 +207,7 @@ pub async fn record_category(
 
 /// Read everything the gates need for one article, and advance its EWMA.
 pub async fn load_state(
-    con: &mut MultiplexedConnection,
+    con: &mut ConnectionManager,
     article: &str,
     now_ms: i64,
     t: &Tunables,
@@ -264,7 +264,7 @@ pub async fn load_state(
 /// pre-burst baseline, so a burst is visible for the length of its window and
 /// only stops firing once the elevated rate becomes the article's new normal.
 async fn update_ewma(
-    con: &mut MultiplexedConnection,
+    con: &mut ConnectionManager,
     article: &str,
     now_ms: i64,
     t: &Tunables,
@@ -328,7 +328,7 @@ pub struct Evidence {
 }
 
 pub async fn load_evidence(
-    con: &mut MultiplexedConnection,
+    con: &mut ConnectionManager,
     article: &str,
 ) -> Result<Evidence> {
     let categories: Vec<String> = redis::cmd("SMEMBERS")
@@ -353,7 +353,7 @@ pub async fn load_evidence(
 /// `SET NX` makes this atomic, so a future partitioned detector can't
 /// double-write the same receipt.
 pub async fn claim_confirmation(
-    con: &mut MultiplexedConnection,
+    con: &mut ConnectionManager,
     article: &str,
     t: &Tunables,
 ) -> Result<bool> {

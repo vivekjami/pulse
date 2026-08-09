@@ -14,7 +14,7 @@ serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 tracing.workspace = true
-redis = { version = "1.5.0", features = ["tokio-comp", "streams"] }
+redis = { version = "1.5.0", features = ["tokio-comp", "streams", "connection-manager"] }
 tokio-stream = { version = "0.1.19", features = ["sync"] }
 tower-http = { version = "0.7.0", features = ["cors"] }
 futures-util = "0.3.33"

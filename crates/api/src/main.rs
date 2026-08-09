@@ -41,9 +41,13 @@ pub struct AppState {
     /// never drops a receipt, which is the one frame type worth delivering.
     confirmed: broadcast::Sender<String>,
     pub pool: Option<PgPool>,
-    /// Multiplexed connection for the game endpoints' short commands. Separate
-    /// from the bus readers, which need a long response timeout for BLOCK.
-    pub redis: Option<redis::aio::MultiplexedConnection>,
+    /// Connection for the game endpoints' short commands. Separate from the bus
+    /// readers, which need a long response timeout for BLOCK.
+    ///
+    /// A ConnectionManager, not a MultiplexedConnection: the latter never
+    /// reconnects, so a single dropped socket turned every game endpoint into a
+    /// permanent 500 ("broken pipe") until the api was restarted by hand.
+    pub redis: Option<redis::aio::ConnectionManager>,
 }
 
 #[tokio::main]
@@ -83,7 +87,7 @@ async fn main() -> Result<()> {
     // stall every queue read behind it.
     let redis = match common::config::valkey_url() {
         Ok(url) => match redis::Client::open(url) {
-            Ok(client) => match client.get_multiplexed_async_connection().await {
+            Ok(client) => match redis::aio::ConnectionManager::new(client).await {
                 Ok(con) => Some(con),
                 Err(err) => {
                     tracing::error!(error = %err, "valkey unavailable for game endpoints");

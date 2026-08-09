@@ -13,6 +13,6 @@ serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 tracing.workspace = true
-redis = { version = "1.5.0", features = ["tokio-comp", "streams"] }
+redis = { version = "1.5.0", features = ["tokio-comp", "streams", "connection-manager"] }
 sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "chrono", "json"] }
 regex = "1.13.1"

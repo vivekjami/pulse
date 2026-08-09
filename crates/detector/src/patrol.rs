@@ -10,7 +10,7 @@
 
 use anyhow::{Context, Result};
 use common::RcEvent;
-use redis::aio::MultiplexedConnection;
+use redis::aio::ConnectionManager;
 
 /// The queue the api reads. Capped: a stale candidate is worse than none.
 pub const QUEUE: &str = "pulse:patrol:queue";
@@ -47,7 +47,7 @@ pub fn is_eligible(ev: &RcEvent) -> bool {
 }
 
 /// Push an eligible edit onto the patrol queue.
-pub async fn enqueue(con: &mut MultiplexedConnection, ev: &RcEvent) -> Result<()> {
+pub async fn enqueue(con: &mut ConnectionManager, ev: &RcEvent) -> Result<()> {
     let payload = serde_json::json!({
         "article": ev.article_key(),
         "wiki": ev.wiki,

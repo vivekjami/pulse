@@ -18,7 +18,7 @@ use anyhow::{Context, Result};
 use common::keys;
 use common::RcEvent;
 use futures_util::StreamExt;
-use redis::aio::MultiplexedConnection;
+use redis::aio::ConnectionManager;
 
 /// How many events between durability checkpoints (PLAN.md Phase 1).
 /// Also the raw-log flush batch, so the pointer never advances past data we
@@ -42,8 +42,7 @@ async fn main() -> Result<()> {
     let raw_dir = common::config::optional("RAW_DIR", "raw");
 
     let client = redis::Client::open(valkey_url).context("opening valkey client")?;
-    let mut con = client
-        .get_multiplexed_async_connection()
+    let mut con = redis::aio::ConnectionManager::new(client)
         .await
         .context("connecting to valkey")?;
 
@@ -105,7 +104,7 @@ async fn main() -> Result<()> {
 async fn consume(
     http: &reqwest::Client,
     stream_url: &str,
-    con: &mut MultiplexedConnection,
+    con: &mut ConnectionManager,
     log: &mut raw::RawLog,
     resume_from: &mut Option<String>,
 ) -> Result<()> {
@@ -214,7 +213,7 @@ async fn consume(
 /// Durability order matters: fsync the raw log FIRST, then advance the pointer.
 /// Reversing it would let a crash skip events that were never written.
 async fn checkpoint(
-    con: &mut MultiplexedConnection,
+    con: &mut ConnectionManager,
     log: &mut raw::RawLog,
     last_id: Option<&str>,
 ) -> Result<()> {

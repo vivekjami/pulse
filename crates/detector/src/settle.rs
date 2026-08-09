@@ -7,7 +7,7 @@
 
 use anyhow::{Context, Result};
 use common::keys;
-use redis::aio::MultiplexedConnection;
+use redis::aio::ConnectionManager;
 use sqlx::postgres::PgPool;
 use sqlx::Row;
 
@@ -24,7 +24,7 @@ fn reverts_key(article: &str) -> String {
 /// Record a strong revert for settlement lookup. Member encodes the reverted
 /// revision id when the comment named one.
 pub async fn record_revert_for_settlement(
-    con: &mut MultiplexedConnection,
+    con: &mut ConnectionManager,
     article: &str,
     rev_id: Option<i64>,
     now_ms: i64,
@@ -81,7 +81,7 @@ pub fn call_is_correct(verdict: bool, was_reverted: bool) -> bool {
 /// cron so settlement latency is seconds, which is what makes the loop feel
 /// like the stream grading you.
 pub async fn settle_due_calls(
-    con: &mut MultiplexedConnection,
+    con: &mut ConnectionManager,
     pool: &PgPool,
     now_ms: i64,
 ) -> Result<usize> {
@@ -191,7 +191,7 @@ pub async fn settle_due_calls(
 /// article in the window", because plenty of real revert comments name the
 /// editor but not the revision (see revert.rs).
 async fn revert_landed(
-    con: &mut MultiplexedConnection,
+    con: &mut ConnectionManager,
     article: &str,
     rev_id: i64,
     from_ms: i64,
@@ -264,7 +264,7 @@ pub async fn sweep_expired_surge(pool: &PgPool) -> Result<u64> {
 /// Credit the First Responder who flagged this article before confirmation
 /// (ARCHITECTURE.md §3.2 `events.first_flagger`).
 pub async fn credit_first_flagger(
-    con: &mut MultiplexedConnection,
+    con: &mut ConnectionManager,
     pool: &PgPool,
     article: &str,
     event_id: i64,

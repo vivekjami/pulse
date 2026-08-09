@@ -10,7 +10,7 @@
 //!   a graph library.
 
 use anyhow::{Context, Result};
-use redis::aio::MultiplexedConnection;
+use redis::aio::ConnectionManager;
 
 /// §4: λ = 10-minute half-life on the decayed counters.
 const HALF_LIFE_SECS: f64 = 600.0;
@@ -42,7 +42,7 @@ pub const CONTROVERSY_BOARD: &str = "pulse:controversy";
 /// Stored as `"<value>:<ts_ms>"`, so decay is computed on touch rather than by a
 /// sweep — there is no background job and a cold article costs nothing.
 async fn bump_decayed(
-    con: &mut MultiplexedConnection,
+    con: &mut ConnectionManager,
     key: &str,
     amount: f64,
     now_ms: i64,
@@ -75,7 +75,7 @@ async fn bump_decayed(
 }
 
 /// Read a decayed counter without touching it.
-async fn read_decayed(con: &mut MultiplexedConnection, key: &str, now_ms: i64) -> f64 {
+async fn read_decayed(con: &mut ConnectionManager, key: &str, now_ms: i64) -> f64 {
     let stored: Option<String> = redis::cmd("GET").arg(key).query_async(con).await.ok().flatten();
     stored
         .as_deref()
@@ -90,7 +90,7 @@ async fn read_decayed(con: &mut MultiplexedConnection, key: &str, now_ms: i64) -
 
 /// Count one ordinary edit toward the denominator of C_a.
 pub async fn record_edit(
-    con: &mut MultiplexedConnection,
+    con: &mut ConnectionManager,
     article: &str,
     now_ms: i64,
 ) -> Result<()> {
@@ -100,7 +100,7 @@ pub async fn record_edit(
 
 /// Count one revert and refresh the article's place on the board.
 pub async fn record_revert(
-    con: &mut MultiplexedConnection,
+    con: &mut ConnectionManager,
     article: &str,
     now_ms: i64,
 ) -> Result<f64> {
@@ -137,7 +137,7 @@ pub struct Edge {
 
 /// Append an edge and return whether the article is now in an edit war.
 pub async fn record_edge(
-    con: &mut MultiplexedConnection,
+    con: &mut ConnectionManager,
     article: &str,
     edge: &Edge,
     now_ms: i64,
