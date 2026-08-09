@@ -20,11 +20,35 @@ out five new modules and ten modified files written in between.
 So:
 
 - **Commit before starting any `api` deploy**, and do not write to the tree
-  while one is in flight. `.git` survives a deploy; the working tree does not.
+  while one is in flight.
 - Recovery, if it happens again: `git diff` output captured in a tool-results
   file restores modified tracked files via `git apply`; new files have to be
   replayed out of the session transcript at
   `~/.claude/projects/-var-www/<session>.jsonl`.
+
+And do not trust `.git` on this mount either. Commits made here have been lost
+whole: three commits reported their hashes, then their objects vanished and the
+reflog skipped them, because the mount is SSHFS and a container cycle discarded
+buffered writes. Committing is not a durable act on this filesystem.
+
+## So: work in a local copy, treat the mount as a deploy staging area
+
+The reliable shape, and the one this repo's history was rebuilt with:
+
+1. Keep the real working tree + `.git` on local disk (a scratchpad outside the
+   mount). Edit and commit there.
+2. `rsync -a --delete --exclude=target --exclude=node_modules --exclude=web/dist
+   --exclude=raw <local>/ /var/www/api/` immediately before deploying.
+3. Deploy. Build and test over `ssh api` against the synced tree.
+
+Two traps in that loop, both already hit:
+
+- The rsync carries `.git` too, so anything created **only** on the mount —
+  notably `git tag` — is destroyed by the next sync. Create tags in the local
+  copy, not here.
+- `node_modules` is excluded, so after any wipe or sync the mount cannot run a
+  web build. That is fine: Zerops' build container runs its own `npm ci`, and
+  local builds happen in the local copy.
 
 ## Building and testing
 
