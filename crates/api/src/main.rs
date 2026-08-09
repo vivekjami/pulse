@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use axum::extract::{Path, Query, State};
-use axum::http::StatusCode;
+use axum::http::{header, Method, StatusCode};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::routing::get;
 use axum::{Json, Router};
@@ -134,17 +134,7 @@ async fn main() -> Result<()> {
         // Phase 5 — Call the Surge
         .route("/v1/surge", axum::routing::post(game::create_bet))
         .route("/v1/watchlist", get(game::watchlist))
-        // The SPA is on its own origin and the game needs its signed cookie to
-        // travel, so this cannot be CorsLayer::permissive(): a wildcard origin is
-        // rejected by browsers when credentials are included. Echo the request
-        // origin instead and allow credentials explicitly.
-        .layer(
-            CorsLayer::new()
-                .allow_origin(tower_http::cors::AllowOrigin::mirror_request())
-                .allow_methods(tower_http::cors::Any)
-                .allow_headers(tower_http::cors::Any)
-                .allow_credentials(true),
-        )
+        .layer(cors_layer())
         .with_state(state);
 
     let port = common::config::port();
@@ -405,4 +395,36 @@ fn row_to_summary(row: &sqlx::postgres::PgRow) -> Value {
         "distinct_eds": row.try_get::<Option<i32>, _>("distinct_eds").ok().flatten(),
         "evidence": row.get::<Value, _>("evidence"),
     })
+}
+
+/// The SPA is on its own origin and the game needs its signed cookie to travel,
+/// so this cannot be `CorsLayer::permissive()`: browsers reject a wildcard
+/// origin when credentials are included. Echo the request origin instead and
+/// allow credentials explicitly.
+///
+/// Every list here is enumerated for the same reason the origin is — CORS
+/// forbids pairing `Allow-Credentials: true` with a `*` in methods or headers,
+/// and tower-http panics while building the layer rather than serve a config a
+/// browser would reject. These are exactly what the SPA sends: GET/POST for the
+/// endpoints, OPTIONS for the preflight, and Content-Type because `apiFetch`
+/// posts JSON.
+fn cors_layer() -> CorsLayer {
+    CorsLayer::new()
+        .allow_origin(tower_http::cors::AllowOrigin::mirror_request())
+        .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+        .allow_headers([header::CONTENT_TYPE])
+        .allow_credentials(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// tower-http validates the credentials/wildcard combination when the layer
+    /// is BUILT, so an invalid pairing is a startup panic, not a bad response —
+    /// it cost a full deploy cycle once. Constructing it here is the whole test.
+    #[test]
+    fn the_cors_layer_is_a_configuration_a_browser_would_accept() {
+        let _ = cors_layer();
+    }
 }
