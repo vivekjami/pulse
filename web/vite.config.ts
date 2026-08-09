@@ -3,8 +3,9 @@ import { resolve } from "node:path";
 
 export default defineConfig({
   // Zerops serves the built artifact from the static service's document root.
-  // Two entry points: the wall at / and the receipts ledger at /events/.
-  // Directory-style output means nginx serves /events/ with no rewrite rules.
+  // Four entry points: the wall at /, the receipts ledger at /events/, Vandal
+  // Patrol at /patrol/ and the standings at /leaderboard/.
+  // Directory-style output means nginx serves each with no rewrite rules.
   build: {
     outDir: "dist",
     emptyOutDir: true,
@@ -13,6 +14,8 @@ export default defineConfig({
       input: {
         main: resolve(__dirname, "index.html"),
         events: resolve(__dirname, "events/index.html"),
+        patrol: resolve(__dirname, "patrol/index.html"),
+        leaderboard: resolve(__dirname, "leaderboard/index.html"),
       },
     },
   },

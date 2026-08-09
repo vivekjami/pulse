@@ -519,3 +519,604 @@ td.empty {
   color: var(--muted);
   line-height: 1.6;
 }
+
+/* ── Section tabs ─────────────────────────────────────────────────────── */
+
+.tabs {
+  display: flex;
+  gap: 0.25rem;
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: 0 1.25rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.tab {
+  padding: 0.6rem 0.9rem;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  letter-spacing: 0.06em;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.tab:hover {
+  color: var(--ink);
+}
+
+.tab.is-current {
+  border-bottom-color: var(--accent);
+  color: var(--ink);
+}
+
+/* ── Shared strip/panel chrome (radar + watchlist) ────────────────────── */
+
+.watchlist,
+.radar {
+  margin: 1.75rem 0;
+}
+
+.strip-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.6rem;
+}
+
+.strip-head h2 {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.hint {
+  margin-left: 0.5rem;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
+.strip-meta {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
+/* ── Watchlist strip (Phase 5) ────────────────────────────────────────── */
+
+.strip {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding-bottom: 0.4rem;
+  scrollbar-width: thin;
+}
+
+.strip .note {
+  margin: 0;
+}
+
+.chip {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  padding: 0.35rem 0.4rem 0.35rem 0.85rem;
+}
+
+.chip-title {
+  color: var(--ink);
+  font-size: 0.8rem;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.chip-title:hover {
+  color: var(--accent);
+}
+
+.chip-when {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  white-space: nowrap;
+}
+
+.stake {
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: transparent;
+  padding: 0.25rem 0.7rem;
+  color: var(--accent);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  white-space: nowrap;
+}
+
+.stake:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.stake:disabled {
+  cursor: default;
+  opacity: 0.75;
+}
+
+.stake.staked {
+  border-color: var(--pos);
+  color: var(--pos);
+}
+
+/* ── Conflict radar (Phase 4) ─────────────────────────────────────────── */
+
+.radar-list {
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 0;
+  list-style: none;
+}
+
+.radar-list .note {
+  margin: 0;
+  padding: 1.25rem 0.9rem;
+}
+
+.radar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  border-bottom: 1px solid var(--line);
+  padding: 0.5rem 0.9rem;
+}
+
+.radar-row:last-child {
+  border-bottom: none;
+}
+
+.radar-row.at-war {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.radar-score {
+  min-width: 3ch;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.radar-row.at-war .radar-score {
+  color: var(--accent);
+}
+
+.radar-title {
+  flex: 1;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 0.84rem;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.radar-title:hover {
+  color: var(--accent);
+}
+
+.war-badge {
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  padding: 0.1rem 0.35rem;
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.ghost {
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: transparent;
+  padding: 0.2rem 0.55rem;
+  color: var(--muted);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 0.64rem;
+  white-space: nowrap;
+}
+
+.ghost:hover {
+  border-color: var(--muted);
+  color: var(--ink);
+}
+
+/* ── Incident drill-down ──────────────────────────────────────────────── */
+
+.incidents {
+  margin-top: 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.incidents-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid var(--line);
+  padding: 0.5rem 0.9rem;
+}
+
+.incidents-title {
+  overflow: hidden;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.incidents-body {
+  max-height: 15rem;
+  overflow-y: auto;
+  padding: 0.4rem 0.9rem 0.8rem;
+}
+
+.incidents-body .note {
+  margin: 0.6rem 0;
+}
+
+.incident {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.28rem 0;
+  font-size: 0.76rem;
+}
+
+.incident-when {
+  min-width: 14ch;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.66rem;
+}
+
+.incident-who {
+  overflow: hidden;
+  color: var(--ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.incident-arrow {
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 0.64rem;
+}
+
+@media (max-width: 40rem) {
+  .radar-row {
+    flex-wrap: wrap;
+  }
+
+  .incident-when {
+    min-width: 100%;
+  }
+}
+
+/* ── Patrol + leaderboard chrome (Phase 3) ────────────────────────────── */
+
+.subnav {
+  margin-top: 0.9rem;
+  color: var(--line);
+  font-family: var(--mono);
+  font-size: 0.7rem;
+}
+
+.subnav a {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.subnav a:hover {
+  color: var(--accent);
+}
+
+.panel {
+  margin: 1.5rem 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 1.1rem 1.1rem 1.25rem;
+}
+
+.panel h2 {
+  margin: 0 0 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.panel .note:first-of-type {
+  margin-top: 0;
+}
+
+.mono {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+}
+
+/* ── Buttons ──────────────────────────────────────────────────────────── */
+
+.btn {
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: transparent;
+  padding: 0.55rem 1.1rem;
+  color: var(--ink);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  letter-spacing: 0.03em;
+  transition: border-color 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+
+.btn:hover:not(:disabled) {
+  border-color: var(--muted);
+}
+
+.btn:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.btn.primary {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.btn.primary:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.btn.danger {
+  border-color: var(--neg);
+  color: var(--neg);
+}
+
+.btn.danger:hover:not(:disabled) {
+  background: var(--neg);
+  color: var(--bg);
+}
+
+.btn.ok {
+  border-color: var(--pos);
+  color: var(--pos);
+}
+
+.btn.ok:hover:not(:disabled) {
+  background: var(--pos);
+  color: var(--bg);
+}
+
+.btn.small {
+  padding: 0.3rem 0.65rem;
+  font-size: 0.66rem;
+}
+
+.btn.small[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ── Join form ────────────────────────────────────────────────────────── */
+
+.join-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.9rem;
+}
+
+.join-form input {
+  flex: 1 1 12rem;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--bg);
+  padding: 0.55rem 0.75rem;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 0.78rem;
+}
+
+.join-form input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.error {
+  margin: 0.75rem 0 0;
+  color: var(--neg);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+}
+
+/* ── The candidate card + verdict row ─────────────────────────────────── */
+
+.patrol-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.9rem;
+  color: var(--muted);
+}
+
+.timer {
+  min-width: 3ch;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 0.2rem 0.55rem;
+  color: var(--ink);
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+/* Under three seconds the timer earns the accent — nothing else moves. */
+.timer.urgent {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.candidate {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  background: var(--bg);
+  padding: 0.9rem 1rem;
+}
+
+.cand-title {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: var(--ink);
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1.3;
+  text-decoration: none;
+}
+
+.cand-title:hover {
+  color: var(--accent);
+}
+
+.verdicts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.9rem;
+}
+
+.verdicts .btn {
+  flex: 1 1 8rem;
+}
+
+/* ── Settlement ───────────────────────────────────────────────────────── */
+
+.settle {
+  margin-top: 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.7rem 0.85rem;
+  animation: settle-in 0.35s ease-out;
+}
+
+.settle p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.settle.pending {
+  border-color: var(--line);
+  color: var(--muted);
+}
+
+.settle.win {
+  border-color: var(--pos);
+  color: var(--pos);
+}
+
+.settle.loss {
+  border-color: var(--neg);
+  color: var(--neg);
+}
+
+@keyframes settle-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settle {
+    animation: none;
+  }
+}
+
+/* ── Open calls list ──────────────────────────────────────────────────── */
+
+.calls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-top: 0.9rem;
+}
+
+.calls .note {
+  margin: 0;
+}
+
+.call-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  border-bottom: 1px solid var(--line);
+  padding: 0.35rem 0;
+  font-size: 0.78rem;
+}
+
+.call-row:last-child {
+  border-bottom: none;
+}
+
+/* A settled call keeps its result visible in the list, not just in the box. */
+.call-row.won {
+  box-shadow: inset 3px 0 0 var(--pos);
+  padding-left: 0.55rem;
+}
+
+.call-row.lost {
+  box-shadow: inset 3px 0 0 var(--neg);
+  padding-left: 0.55rem;
+}
+
+.call-article {
+  flex: 1;
+  overflow: hidden;
+  color: var(--ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Leaderboard ──────────────────────────────────────────────────────── */
+
+main.wide {
+  max-width: 60rem;
+}

@@ -19,9 +19,47 @@
       </div>
     </header>
 
+    <nav class="tabs" aria-label="Sections">
+      <a href="/" class="tab is-current">wall</a>
+      <a href="/patrol/" class="tab">patrol</a>
+      <a href="/leaderboard/" class="tab">leaderboard</a>
+      <a href="/events/" class="tab">receipts</a>
+    </nav>
+
     <main>
+      <!--
+        Phase 5: gate-1-only candidates. Public leading indicators — seeing them
+        is what makes a Surge bet skill rather than a coin flip.
+      -->
+      <section class="watchlist" aria-label="Surge watchlist">
+        <div class="strip-head">
+          <h2>Watchlist <span class="hint">gate 1 cleared, awaiting a crowd</span></h2>
+          <span class="strip-meta" id="watch-meta">—</span>
+        </div>
+        <div id="watch-strip" class="strip" role="list"></div>
+      </section>
+
       <!-- Confirmed bursts land here, newest on top (Phase 2). -->
       <section id="cards" class="cards" aria-label="Confirmed events"></section>
+
+      <!--
+        Phase 4: the conflict radar. Top articles by the decayed controversy
+        index C_a, with a war badge where a revert cycle is currently active.
+      -->
+      <section class="radar" aria-label="Conflict radar">
+        <div class="strip-head">
+          <h2>Fought over right now <span class="hint">controversy index</span></h2>
+          <span class="strip-meta" id="radar-meta">—</span>
+        </div>
+        <ol id="radar-list" class="radar-list"></ol>
+        <div id="incidents" class="incidents" hidden>
+          <div class="incidents-head">
+            <span id="incidents-title" class="incidents-title"></span>
+            <button type="button" id="incidents-close" class="ghost">close</button>
+          </div>
+          <div id="incidents-body" class="incidents-body"></div>
+        </div>
+      </section>
 
       <!-- The live wall. Phase 1 streams rows in here over SSE. -->
       <section class="wall" aria-label="Live edit feed">

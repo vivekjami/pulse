@@ -12,7 +12,16 @@
  * come off a public wiki — so text always lands via `textContent`. Nothing here
  * builds markup from stream data.
  */
-import { apiBase, formatDetectedAt, KIND_ICON } from "./api";
+import {
+  apiBase,
+  apiFetch,
+  articleLabel,
+  formatDetectedAt,
+  join,
+  KIND_ICON,
+  splitArticle,
+  whoami,
+} from "./api";
 
 /** Shape of the `edit` frame: the raw recentchange event the api forwards. */
 interface RcEvent {
@@ -238,6 +247,249 @@ function wirePauseOnHover(): void {
   });
 }
 
+// ── Phase 4: the conflict radar ────────────────────────────────────────────
+
+/** A row on the controversy board, as served by `GET /v1/controversy`. */
+interface RadarRow {
+  article: string;
+  controversy: number;
+  edit_war: boolean;
+}
+
+/** One revert, as served by `GET /v1/incidents?article=`. */
+interface Incident {
+  reverter: string;
+  reverted: string;
+  rev_id: number | null;
+  at: string;
+}
+
+const RADAR_LIMIT = 12;
+const RADAR_POLL_MS = 20_000;
+const WATCH_LIMIT = 12;
+const WATCH_POLL_MS = 15_000;
+/** Matches the api's own STAKE_MIN..=STAKE_MAX guard; a bad value is a 400. */
+const DEFAULT_STAKE = 10;
+
+const radarList = document.getElementById("radar-list") as HTMLOListElement | null;
+const radarMeta = document.getElementById("radar-meta");
+const incidentsBox = document.getElementById("incidents") as HTMLDivElement | null;
+const incidentsTitle = document.getElementById("incidents-title");
+const incidentsBody = document.getElementById("incidents-body") as HTMLDivElement | null;
+const watchStrip = document.getElementById("watch-strip") as HTMLDivElement | null;
+const watchMeta = document.getElementById("watch-meta");
+
+/** Link straight to the article's own history — the primary source for a claim. */
+function historyUrl(article: string): string {
+  const { wiki, title } = splitArticle(article);
+  const host = wiki.endsWith("wiki") ? `${wiki.slice(0, -4)}.wikipedia.org` : "en.wikipedia.org";
+  return `https://${host}/w/index.php?title=${encodeURIComponent(title.replace(/ /g, "_"))}&action=history`;
+}
+
+async function showIncidents(article: string): Promise<void> {
+  if (!incidentsBox || !incidentsBody) return;
+  incidentsBox.hidden = false;
+  if (incidentsTitle) incidentsTitle.textContent = `reverts on ${articleLabel(article)}`;
+  incidentsBody.replaceChildren(el("p", "note", "loading…"));
+
+  let items: Incident[] = [];
+  try {
+    const res = await apiFetch(`/v1/incidents?article=${encodeURIComponent(article)}&limit=25`);
+    if (!res.ok) throw new Error(String(res.status));
+    items = ((await res.json()) as { incidents?: Incident[] }).incidents ?? [];
+  } catch {
+    incidentsBody.replaceChildren(el("p", "note", "could not load incidents"));
+    return;
+  }
+
+  if (items.length === 0) {
+    incidentsBody.replaceChildren(
+      el("p", "note", "no parsed reverts on record — the index also counts raw edit pressure"),
+    );
+    return;
+  }
+
+  const rows = items.map((it) => {
+    const row = el("div", "incident");
+    row.appendChild(el("span", "incident-when", formatDetectedAt(it.at)));
+    row.appendChild(el("span", "incident-who", it.reverter));
+    row.appendChild(el("span", "incident-arrow", "reverted"));
+    row.appendChild(el("span", "incident-who", it.reverted));
+    return row;
+  });
+  incidentsBody.replaceChildren(...rows);
+}
+
+function renderRadar(rows: RadarRow[]): void {
+  if (!radarList) return;
+  if (rows.length === 0) {
+    radarList.replaceChildren(el("li", "note", "no contested articles in the window yet"));
+    return;
+  }
+
+  const items = rows.map((row) => {
+    const li = el("li", "radar-row");
+    if (row.edit_war) li.classList.add("at-war");
+
+    li.appendChild(el("span", "radar-score", row.controversy.toFixed(1)));
+
+    const link = document.createElement("a");
+    link.className = "radar-title";
+    link.textContent = articleLabel(row.article);
+    link.href = historyUrl(row.article);
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    li.appendChild(link);
+
+    if (row.edit_war) li.appendChild(el("span", "war-badge", "edit war"));
+
+    const more = document.createElement("button");
+    more.type = "button";
+    more.className = "ghost";
+    more.textContent = "incidents";
+    more.addEventListener("click", () => void showIncidents(row.article));
+    li.appendChild(more);
+
+    return li;
+  });
+  radarList.replaceChildren(...items);
+}
+
+async function pollRadar(): Promise<void> {
+  try {
+    const res = await apiFetch(`/v1/controversy?limit=${RADAR_LIMIT}`);
+    if (!res.ok) throw new Error(String(res.status));
+    const body = (await res.json()) as { articles?: RadarRow[] };
+    const rows = body.articles ?? [];
+    renderRadar(rows);
+    const wars = rows.filter((r) => r.edit_war).length;
+    if (radarMeta) {
+      radarMeta.textContent = wars > 0 ? `${rows.length} tracked · ${wars} at war` : `${rows.length} tracked`;
+    }
+  } catch {
+    if (radarMeta) radarMeta.textContent = "radar offline";
+  }
+}
+
+// ── Phase 5: the watchlist strip + stake button ────────────────────────────
+
+/** A gate-1-only candidate, as served by `GET /v1/watchlist`. */
+interface Candidate {
+  article: string;
+  seen_at_ms: number;
+}
+
+/** Cached so the strip can show "staked" without a round trip per render. */
+const staked = new Set<string>();
+
+/**
+ * Place a Surge bet, claiming a handle first if the visitor has no cookie yet.
+ * The prompt is deliberate: a bet must be attributable to settle against a
+ * confirmation, and the api refuses an unauthenticated stake with a 401.
+ */
+async function stake(article: string, button: HTMLButtonElement): Promise<void> {
+  button.disabled = true;
+  try {
+    let player = await whoami();
+    if (!player) {
+      const handle = window.prompt("Pick a handle to bet under:")?.trim();
+      if (!handle) return;
+      player = await join(handle);
+      if (!player) {
+        button.textContent = "handle taken";
+        return;
+      }
+    }
+
+    const res = await apiFetch("/v1/surge", {
+      method: "POST",
+      body: JSON.stringify({ article, stake: DEFAULT_STAKE }),
+    });
+    if (res.status === 402) {
+      button.textContent = "no points";
+      return;
+    }
+    if (!res.ok) {
+      button.textContent = "failed";
+      return;
+    }
+    staked.add(article);
+    button.textContent = `staked ${DEFAULT_STAKE}`;
+    button.classList.add("staked");
+  } catch {
+    button.textContent = "failed";
+  } finally {
+    // A settled or rejected bet stays visible; only a live bet locks the button.
+    if (!staked.has(article)) button.disabled = false;
+  }
+}
+
+function renderWatchlist(items: Candidate[]): void {
+  if (!watchStrip) return;
+  if (items.length === 0) {
+    watchStrip.replaceChildren(
+      el("p", "note", "no candidates on the watchlist — gate 1 is quiet right now"),
+    );
+    return;
+  }
+
+  const chips = items.map((item) => {
+    const chip = el("div", "chip");
+    chip.setAttribute("role", "listitem");
+
+    const link = document.createElement("a");
+    link.className = "chip-title";
+    link.textContent = articleLabel(item.article);
+    link.href = historyUrl(item.article);
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    chip.appendChild(link);
+
+    const seen = new Date(item.seen_at_ms);
+    if (!Number.isNaN(seen.getTime())) {
+      chip.appendChild(el("span", "chip-when", formatDetectedAt(seen.toISOString())));
+    }
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "stake";
+    if (staked.has(item.article)) {
+      button.textContent = `staked ${DEFAULT_STAKE}`;
+      button.classList.add("staked");
+      button.disabled = true;
+    } else {
+      button.textContent = `stake ${DEFAULT_STAKE}`;
+      button.addEventListener("click", () => void stake(item.article, button));
+    }
+    chip.appendChild(button);
+
+    return chip;
+  });
+  watchStrip.replaceChildren(...chips);
+}
+
+async function pollWatchlist(): Promise<void> {
+  try {
+    const res = await apiFetch(`/v1/watchlist?limit=${WATCH_LIMIT}`);
+    if (!res.ok) throw new Error(String(res.status));
+    const body = (await res.json()) as { candidates?: Candidate[] };
+    const items = body.candidates ?? [];
+    renderWatchlist(items);
+    if (watchMeta) watchMeta.textContent = `${items.length} candidate${items.length === 1 ? "" : "s"}`;
+  } catch {
+    if (watchMeta) watchMeta.textContent = "watchlist offline";
+  }
+}
+
+document.getElementById("incidents-close")?.addEventListener("click", () => {
+  if (incidentsBox) incidentsBox.hidden = true;
+});
+
 wirePauseOnHover();
 startRateMeter();
 connect();
+
+void pollRadar();
+void pollWatchlist();
+window.setInterval(() => void pollRadar(), RADAR_POLL_MS);
+window.setInterval(() => void pollWatchlist(), WATCH_POLL_MS);

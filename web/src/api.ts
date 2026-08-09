@@ -48,3 +48,46 @@ export function formatDetectedAt(iso: string): string {
         : `${Math.floor(secs / 3600)}h ago`;
   return `${then.toISOString().slice(11, 19)}Z · ${rel}`;
 }
+
+/**
+ * Fetch against the api carrying the signed player cookie.
+ *
+ * `credentials: "include"` is required because the SPA and the api are on
+ * different origins; the api mirrors the request origin and sets
+ * `Access-Control-Allow-Credentials`, which a wildcard origin cannot do.
+ */
+export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  return fetch(`${apiBase()}${path}`, {
+    ...init,
+    credentials: "include",
+    headers: { "Content-Type": "application/json", ...(init.headers ?? {}) },
+  });
+}
+
+export interface Player {
+  id: number;
+  handle: string;
+  elo: number;
+  points: number;
+}
+
+/** Who am I? `null` when there is no valid cookie yet. */
+export async function whoami(): Promise<Player | null> {
+  const res = await apiFetch("/v1/me");
+  return res.ok ? ((await res.json()) as Player) : null;
+}
+
+/** Claim a handle and receive the signed cookie. */
+export async function join(handle: string): Promise<Player | null> {
+  const res = await apiFetch("/v1/players", {
+    method: "POST",
+    body: JSON.stringify({ handle }),
+  });
+  return res.ok ? ((await res.json()) as Player) : null;
+}
+
+/** Split "{wiki}:{title}" and render it for display. */
+export function articleLabel(article: string): string {
+  const { wiki, title } = splitArticle(article);
+  return wiki ? `${title} (${wiki})` : title;
+}

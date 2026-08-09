@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pulse — Vandal Patrol</title>
+    <meta
+      name="description"
+      content="See a live Wikipedia edit, call vandalism or legit in 10 seconds. Reality settles the score: was it reverted?"
+    />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header class="masthead">
+      <h1 class="wordmark"><a href="/" class="home">PULSE</a></h1>
+      <p class="tagline">Vandal Patrol — call it in 10 seconds. Reality settles the score.</p>
+      <div class="status" id="status" data-state="idle">
+        <span class="dot"></span><span id="status-text">loading…</span>
+      </div>
+      <nav class="subnav">
+        <a href="/">wall</a> · <a href="/events/">receipts</a> ·
+        <a href="/leaderboard/">leaderboard</a>
+      </nav>
+    </header>
+
+    <main>
+      <!-- Handle prompt: no password, the handle IS the identity. -->
+      <section id="join" class="panel" hidden>
+        <h2>Pick a handle</h2>
+        <p class="note">No password. Your handle is your identity, kept in a signed cookie.</p>
+        <form id="join-form" class="join-form">
+          <input
+            id="handle"
+            name="handle"
+            type="text"
+            maxlength="24"
+            required
+            placeholder="your handle"
+            autocomplete="off"
+          />
+          <button type="submit" class="btn primary">Start patrolling</button>
+        </form>
+        <p id="join-error" class="error" hidden></p>
+      </section>
+
+      <section id="patrol" class="panel" hidden>
+        <div class="patrol-head">
+          <span id="who" class="mono"></span>
+          <span id="timer" class="timer mono">10</span>
+        </div>
+
+        <article id="candidate" class="candidate">
+          <a id="cand-title" class="cand-title" target="_blank" rel="noopener noreferrer"></a>
+          <div class="card-facts">
+            <span class="badge" id="cand-wiki"></span>
+            <span class="fact" id="cand-user"></span>
+            <span class="fact" id="cand-delta"></span>
+          </div>
+          <p id="cand-comment" class="card-comment"></p>
+          <a id="cand-diff" class="card-receipt" target="_blank" rel="noopener noreferrer"
+            >view the diff on Wikipedia →</a
+          >
+        </article>
+
+        <div class="verdicts">
+          <button id="btn-vandal" class="btn danger">Vandalism</button>
+          <button id="btn-legit" class="btn ok">Legit</button>
+          <button id="btn-skip" class="btn">Skip</button>
+        </div>
+
+        <div id="settle" class="settle" hidden>
+          <p id="settle-text" class="mono"></p>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Open calls</h2>
+        <p class="note">
+          Each call settles when its 10-minute deadline expires: Pulse checks whether a real
+          revert landed on that article, then moves your rating. Nothing here is invented —
+          the same stream that showed you the edit decides the outcome.
+        </p>
+        <div id="calls" class="calls"></div>
+      </section>
+    </main>
+
+    <footer>
+      <p>
+        Data:
+        <a href="https://wikitech.wikimedia.org/wiki/Event_Platform/EventStreams"
+          >Wikimedia EventStreams</a
+        >
+        — content © its contributors, CC-BY-SA 4.0. Pulse itself: MIT.
+      </p>
+    </footer>
+
+    <script type="module" src="/src/patrol.ts"></script>
+  </body>
+</html>

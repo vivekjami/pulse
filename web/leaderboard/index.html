@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pulse — Leaderboard</title>
+    <meta name="description" content="Vandal Patrol ELO and Call the Surge points, settled by the stream itself." />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header class="masthead">
+      <h1 class="wordmark"><a href="/" class="home">PULSE</a></h1>
+      <p class="tagline">Leaderboard — rated by reality, not by vibes.</p>
+      <div class="status" id="status" data-state="idle">
+        <span class="dot"></span><span id="status-text">loading…</span>
+      </div>
+      <nav class="subnav">
+        <a href="/">wall</a> · <a href="/events/">receipts</a> · <a href="/patrol/">patrol</a>
+      </nav>
+    </header>
+
+    <main class="wide">
+      <section class="wall">
+        <div class="wall-head">
+          <h2>Standings</h2>
+          <span class="wall-head-right">
+            <button class="btn small" id="mode-patrol" data-mode="patrol">Patrol (ELO)</button>
+            <button class="btn small" id="mode-surge" data-mode="surge">Surge (points)</button>
+          </span>
+        </div>
+        <div class="table-scroll">
+          <table class="ledger">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Handle</th>
+                <th class="num">ELO</th>
+                <th class="num">Points</th>
+                <th class="num">Settled calls</th>
+              </tr>
+            </thead>
+            <tbody id="board-body"></tbody>
+          </table>
+        </div>
+      </section>
+      <p class="note">
+        ELO starts at 1000 and moves against a fixed 1200 house with K=32, so a correct call as
+        an underdog gains more than a wrong one costs. Points come from Call the Surge: a stake
+        is deducted when placed and returned doubled only if the detector confirms the burst
+        after you called it.
+      </p>
+    </main>
+
+    <footer>
+      <p>Data: Wikimedia EventStreams — CC-BY-SA 4.0. Pulse itself: MIT.</p>
+    </footer>
+
+    <script type="module" src="/src/leaderboard.ts"></script>
+  </body>
+</html>
