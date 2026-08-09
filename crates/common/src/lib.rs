@@ -139,6 +139,26 @@ impl RcEvent {
     pub fn is_anon(&self) -> bool {
         is_anon_user(&self.user)
     }
+
+    /// When this edit actually happened, in unix milliseconds.
+    ///
+    /// The detector keys every window, bucket and baseline off this rather than
+    /// wall-clock time. Two reasons: replaying a buffered backlog must not
+    /// compress hours of history into seconds (which would make every article
+    /// look simultaneously hot and the global normalizer meaningless), and a
+    /// time-honest detector can be re-run against the raw archive to measure
+    /// precision of a new gate version.
+    ///
+    /// Prefers the event platform's `meta.dt`, falls back to MediaWiki's
+    /// `timestamp` (unix seconds), and returns `None` when neither is present.
+    pub fn event_time_ms(&self) -> Option<i64> {
+        if let Some(dt) = self.meta.dt.as_deref() {
+            if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(dt) {
+                return Some(parsed.timestamp_millis());
+            }
+        }
+        self.timestamp.map(|secs| secs * 1000)
+    }
 }
 
 /// True when a username is really an IP address — MediaWiki's marker for an
@@ -221,6 +241,26 @@ mod tests {
         )
         .unwrap();
         assert!(ev.is_anon());
+    }
+
+    #[test]
+    fn event_time_prefers_meta_dt_then_falls_back() {
+        let ev: RcEvent = serde_json::from_str(SAMPLE).unwrap();
+        // meta.dt = 2026-08-09T05:00:00Z
+        assert_eq!(ev.event_time_ms(), Some(1786251600000));
+
+        // No meta.dt: fall back to MediaWiki's unix-second timestamp.
+        let ev: RcEvent = serde_json::from_str(
+            r#"{"meta":{},"type":"edit","title":"X","wiki":"enwiki","timestamp":1786262755}"#,
+        )
+        .unwrap();
+        assert_eq!(ev.event_time_ms(), Some(1786262755000));
+
+        // Neither present: the caller must decide, not silently get "now".
+        let ev: RcEvent =
+            serde_json::from_str(r#"{"meta":{},"type":"edit","title":"X","wiki":"enwiki"}"#)
+                .unwrap();
+        assert_eq!(ev.event_time_ms(), None);
     }
 
     #[test]

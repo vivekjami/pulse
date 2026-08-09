@@ -72,6 +72,8 @@ struct Stats {
     gate1: u64,
     gate2: u64,
     confirmed: u64,
+    /// Events the stream gave us no usable timestamp for.
+    undated: u64,
     last_report: Option<std::time::Instant>,
 }
 
@@ -185,6 +187,7 @@ fn report(stats: &mut Stats) {
             gate1_passed = stats.gate1,
             gate2_passed = stats.gate2,
             confirmed = stats.confirmed,
+            undated = stats.undated,
             "detector throughput"
         );
     }
@@ -201,7 +204,14 @@ async fn handle(
     let ev: RcEvent = serde_json::from_str(payload).context("parsing event")?;
     stats.seen += 1;
 
-    let now_ms = chrono::Utc::now().timestamp_millis();
+    // Event time, not wall-clock: see RcEvent::event_time_ms. An event the
+    // stream never timestamped is unusable for windowing, so it is counted and
+    // dropped rather than smeared onto the current instant.
+    let Some(now_ms) = ev.event_time_ms() else {
+        stats.undated += 1;
+        return Ok(());
+    };
+
     // Every event counts toward the global rate, bots included — the whole
     // point of the normalizer is to see floods.
     state::bump_global_rate(con, now_ms).await?;
@@ -226,6 +236,7 @@ async fn handle(
     }
 
     let article = ev.article_key();
+    // Window members must be unique per event; meta.id is the stream's own uuid.
     let member = ev
         .meta
         .id
