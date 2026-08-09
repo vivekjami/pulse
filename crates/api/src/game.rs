@@ -27,6 +27,13 @@ const SURGE_WINDOW_MINS: i64 = 60;
 /// Stake bounds — a hackathon ledger, not a casino.
 const STAKE_MIN: i32 = 1;
 const STAKE_MAX: i32 = 100;
+/// Points a new player starts with, worth ten bets at the SPA's default stake.
+///
+/// Without this the Surge economy has no entry point: `points` only ever rises
+/// when a bet WINS, and placing a bet requires `points >= stake`, so a player
+/// created at the schema's `DEFAULT 0` could never place a first bet and the
+/// whole mechanic was unreachable.
+const OPENING_BANKROLL: i64 = 100;
 /// Handles are display strings; keep them short and printable.
 const HANDLE_MAX: usize = 24;
 
@@ -134,12 +141,20 @@ pub async fn create_player(
         return Err(StatusCode::BAD_REQUEST);
     }
 
+    // The opening bankroll is granted here rather than as a column default,
+    // because ensure_schema is CREATE TABLE IF NOT EXISTS — a changed default
+    // would never reach a table that already exists.
+    //
+    // ON CONFLICT deliberately does NOT touch points: re-joining under an
+    // existing handle must not re-grant, or the stake is free and Surge stops
+    // costing anything.
     let row = sqlx::query(
-        "INSERT INTO players (handle) VALUES ($1)
+        "INSERT INTO players (handle, points) VALUES ($1, $2)
          ON CONFLICT (handle) DO UPDATE SET handle = EXCLUDED.handle
          RETURNING id, handle, elo, points",
     )
     .bind(handle)
+    .bind(OPENING_BANKROLL)
     .fetch_one(pool)
     .await
     .map_err(|err| {
