@@ -153,3 +153,108 @@ footer {
 footer a {
   color: var(--muted);
 }
+
+/* ── The live wall rows (Phase 1) ─────────────────────────────────────────── */
+
+.feed.paused {
+  outline: 1px solid rgba(255, 77, 109, 0.35);
+  outline-offset: -1px;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr 4.5rem 9rem;
+  gap: 0.75rem;
+  align-items: baseline;
+  padding: 0.4rem 1rem;
+  border-bottom: 1px solid rgba(30, 37, 48, 0.6);
+  font-size: 0.82rem;
+  animation: land 0.4s ease-out;
+}
+
+@keyframes land {
+  from {
+    opacity: 0;
+    background: rgba(255, 77, 109, 0.06);
+  }
+  to {
+    opacity: 1;
+    background: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .row {
+    animation: none;
+  }
+}
+
+.row.is-bot {
+  opacity: 0.45;
+}
+
+.badge {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0.05rem 0.3rem;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.title {
+  color: var(--ink);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+a.title:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.delta {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.delta.pos {
+  color: var(--pos);
+}
+
+.delta.neg {
+  color: var(--neg);
+}
+
+.delta.zero {
+  color: var(--muted);
+}
+
+.user {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user.anon {
+  color: var(--accent);
+}
+
+@media (max-width: 40rem) {
+  .row {
+    grid-template-columns: 4rem 1fr 3.5rem;
+  }
+  .user {
+    display: none;
+  }
+}

@@ -65,6 +65,11 @@ zerops:
   - setup: web
     build:
       base: nodejs@22
+      envVariables:
+        # Baked into the bundle at build time — a static site has no runtime env.
+        # If this cross-service ref doesn't resolve, main.ts derives the api
+        # origin from its own hostname instead, so the wall connects either way.
+        VITE_API_BASE: ${api_zeropsSubdomain}
       buildCommands:
         - cd web && npm ci
         - cd web && npm run build
