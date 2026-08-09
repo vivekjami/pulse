@@ -1,0 +1,73 @@
+# ARCHITECTURE.md §7. One file describes all services.
+#
+# The monorepo lives in the `api` service, so `api` is a SELF-deploy and its
+# deployFiles must be [.] — a narrower pattern would delete the source tree.
+# Per the Zerops deploy contract that changes only its start path:
+#   deployFiles: target/release/~api + start: ./api   (cross-deploy form)
+#   deployFiles: [.]                + start: ./target/release/api
+# The other three are CROSS-deploys from `api` and use §7's binary-only form
+# verbatim: the tilde strips the leading dirs so the binary lands at /var/www/.
+
+zerops:
+  - setup: ingest
+    build:
+      base: rust@stable
+      os: ubuntu
+      buildCommands:
+        - cargo build --release -p ingest
+      deployFiles: [target/release/~ingest]
+    run: # no port; pure worker
+      os: ubuntu
+      envVariables:
+        VALKEY_URL: ${cache_connectionString}
+        STREAM_URL: https://stream.wikimedia.org/v2/stream/recentchange
+        RUST_LOG: info
+      start: ./ingest
+
+  - setup: detector
+    build:
+      base: rust@stable
+      os: ubuntu
+      buildCommands:
+        - cargo build --release -p detector
+      deployFiles: [target/release/~detector]
+    run:
+      os: ubuntu
+      envVariables:
+        DATABASE_URL: postgresql://${db_user}:${db_password}@${db_hostname}:${db_port}/${db_dbName}
+        VALKEY_URL: ${cache_connectionString}
+        RUST_LOG: info
+      start: ./detector
+
+  - setup: api
+    build:
+      base: rust@stable
+      os: ubuntu
+      buildCommands:
+        - cargo build --release -p api
+      deployFiles: [.]
+    run:
+      os: ubuntu
+      ports:
+        - port: 3000
+          httpSupport: true
+      envVariables:
+        DATABASE_URL: postgresql://${db_user}:${db_password}@${db_hostname}:${db_port}/${db_dbName}
+        VALKEY_URL: ${cache_connectionString}
+        PORT: 3000
+        RUST_LOG: info
+      healthCheck:
+        httpGet:
+          port: 3000
+          path: /healthz
+      start: ./target/release/api
+
+  - setup: web
+    build:
+      base: nodejs@22
+      buildCommands:
+        - cd web && npm ci
+        - cd web && npm run build
+      deployFiles: [web/dist/~]
+    run:
+      base: nginx@1.22

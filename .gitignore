@@ -1,0 +1,22 @@
+# Rust
+/target
+**/*.rs.bk
+
+# Build artifact staged for the deploy bridge (created in the build container)
+/bin
+
+# Node / web
+node_modules
+web/dist
+
+# Local env — never commit connection strings
+.env
+
+# Raw stream capture kept for the replay harness, not for git
+/raw
+*.jsonl
+*.jsonl.gz
+
+# OS / editor junk
+.DS_Store
+*.swp

@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pulse — Wikipedia as a live sensor</title>
+    <meta
+      name="description"
+      content="Pulse consumes the full Wikimedia edit firehose in real time, detects bursts with a multi-gate statistical detector, and timestamps them permanently."
+    />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header class="masthead">
+      <h1 class="wordmark">PULSE</h1>
+      <p class="tagline">The world's largest collaborative document is a live sensor.</p>
+      <div class="status" id="status" data-state="idle">
+        <span class="dot"></span><span id="status-text">phase 0 — skeleton deployed</span>
+      </div>
+    </header>
+
+    <main>
+      <!-- The live wall. Phase 1 streams rows in here over SSE. -->
+      <section class="wall" aria-label="Live edit feed">
+        <div class="wall-head">
+          <h2>Live wall</h2>
+          <span class="wall-meta" id="wall-meta">awaiting firehose</span>
+        </div>
+        <div id="feed" class="feed" role="log" aria-live="polite"></div>
+      </section>
+    </main>
+
+    <footer>
+      <p>
+        Data:
+        <a href="https://wikitech.wikimedia.org/wiki/Event_Platform/EventStreams"
+          >Wikimedia EventStreams</a
+        >
+        — content © its contributors, CC-BY-SA 4.0. Pulse itself: MIT.
+      </p>
+    </footer>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
