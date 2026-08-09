@@ -20,11 +20,17 @@
     </header>
 
     <main>
+      <!-- Confirmed bursts land here, newest on top (Phase 2). -->
+      <section id="cards" class="cards" aria-label="Confirmed events"></section>
+
       <!-- The live wall. Phase 1 streams rows in here over SSE. -->
       <section class="wall" aria-label="Live edit feed">
         <div class="wall-head">
           <h2>Live wall</h2>
-          <span class="wall-meta" id="wall-meta">awaiting firehose</span>
+          <span class="wall-head-right">
+            <a class="ledger-link" href="/events/">receipts →</a>
+            <span class="wall-meta" id="wall-meta">awaiting firehose</span>
+          </span>
         </div>
         <div id="feed" class="feed" role="log" aria-live="polite"></div>
       </section>

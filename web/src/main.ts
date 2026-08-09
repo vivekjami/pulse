@@ -5,10 +5,14 @@
  * badge, the title, the byte delta (green/red), the user, with anonymous edits
  * highlighted. Auto-scroll, paused while the pointer is over the feed.
  *
+ * Phase 2 adds `confirmed` frames: a burst that cleared both gates slides in as
+ * an event card above the wall.
+ *
  * Every value on a row is attacker-controlled — titles, usernames and comments
  * come off a public wiki — so text always lands via `textContent`. Nothing here
  * builds markup from stream data.
  */
+import { apiBase, formatDetectedAt, KIND_ICON } from "./api";
 
 /** Shape of the `edit` frame: the raw recentchange event the api forwards. */
 interface RcEvent {
@@ -22,13 +26,30 @@ interface RcEvent {
   length?: { old?: number | null; new?: number | null };
 }
 
+/** A burst that cleared both gates, as published on `pulse:bus:confirmed`. */
+interface Confirmed {
+  id: number;
+  article: string;
+  kind: string;
+  detected_at: string;
+  distinct_eds: number;
+  peak_rate: number;
+  wiki?: string;
+  title?: string;
+  title_url?: string;
+  sample_comments?: string[];
+}
+
 /** Keep the DOM bounded — the stream never stops. */
 const MAX_ROWS = 200;
+/** Event cards are rare and worth keeping visible; cap the column anyway. */
+const MAX_CARDS = 8;
 
 const feed = document.getElementById("feed") as HTMLDivElement | null;
 const statusEl = document.getElementById("status");
 const statusText = document.getElementById("status-text");
 const wallMeta = document.getElementById("wall-meta");
+const cards = document.getElementById("cards") as HTMLDivElement | null;
 
 /** Auto-scroll pauses while the pointer rests on the feed. */
 let paused = false;
@@ -39,24 +60,6 @@ let totalCount = 0;
 function setStatus(state: "idle" | "live" | "error", text: string): void {
   statusEl?.setAttribute("data-state", state);
   if (statusText) statusText.textContent = text;
-}
-
-/**
- * Where the api lives. Zerops bakes `VITE_API_BASE` at build time from the
- * api service's own subdomain; if that reference didn't resolve we derive it
- * from our own hostname, which also makes `npm run dev` work locally.
- */
-function apiBase(): string {
-  const configured = import.meta.env.VITE_API_BASE as string | undefined;
-  if (configured && configured.startsWith("http")) {
-    return configured.replace(/\/+$/, "");
-  }
-  const host = window.location.hostname;
-  const [sub, ...rest] = host.split(".");
-  if (sub.startsWith("web-") && rest.length > 0) {
-    return `${window.location.protocol}//${sub.replace(/^web-/, "api-")}-3000.${rest.join(".")}`;
-  }
-  return "http://localhost:3000";
 }
 
 function byteDelta(ev: RcEvent): number | null {
@@ -124,6 +127,57 @@ function renderRow(ev: RcEvent): void {
   if (!paused) feed.scrollTop = feed.scrollHeight;
 }
 
+/**
+ * An event card: type icon, article, detected-at, editor count, sample comments.
+ * This is the moment the product earns its name, so it gets an entrance.
+ */
+function renderCard(ev: Confirmed): void {
+  if (!cards) return;
+
+  const card = el("article", `card kind-${ev.kind}`);
+
+  const head = el("div", "card-head");
+  head.appendChild(el("span", "card-icon", KIND_ICON[ev.kind] ?? "◦"));
+  head.appendChild(el("span", "card-kind", ev.kind));
+  head.appendChild(el("span", "card-when", formatDetectedAt(ev.detected_at)));
+  card.appendChild(head);
+
+  const title = ev.title ?? ev.article;
+  if (ev.title_url) {
+    const link = document.createElement("a");
+    link.className = "card-title";
+    link.textContent = title;
+    link.href = ev.title_url;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    card.appendChild(link);
+  } else {
+    card.appendChild(el("span", "card-title", title));
+  }
+
+  const facts = el("div", "card-facts");
+  facts.appendChild(el("span", "fact", `${ev.distinct_eds} editors`));
+  facts.appendChild(el("span", "fact", `${Math.round(ev.peak_rate)} edits/5m`));
+  if (ev.wiki) facts.appendChild(el("span", "badge", ev.wiki));
+  card.appendChild(facts);
+
+  const samples = (ev.sample_comments ?? []).filter((c) => c.trim().length > 0).slice(0, 2);
+  for (const comment of samples) {
+    card.appendChild(el("p", "card-comment", comment));
+  }
+
+  const receipt = document.createElement("a");
+  receipt.className = "card-receipt";
+  receipt.textContent = `receipt #${ev.id} →`;
+  receipt.href = "/events/";
+  card.appendChild(receipt);
+
+  cards.prepend(card);
+  while (cards.childElementCount > MAX_CARDS) {
+    cards.removeChild(cards.lastElementChild!);
+  }
+}
+
 function connect(): void {
   const url = `${apiBase()}/v1/live`;
   setStatus("idle", "connecting to firehose…");
@@ -144,6 +198,16 @@ function connect(): void {
     windowCount += 1;
     totalCount += 1;
     renderRow(ev);
+  });
+
+  source.addEventListener("confirmed", (event) => {
+    let ev: Confirmed;
+    try {
+      ev = JSON.parse((event as MessageEvent<string>).data) as Confirmed;
+    } catch {
+      return;
+    }
+    renderCard(ev);
   });
 
   source.addEventListener("error", () => {

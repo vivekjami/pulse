@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pulse — Receipts</title>
+    <meta
+      name="description"
+      content="Every burst Pulse has detected, with its permanent detected-at timestamp and the evidence trail behind it."
+    />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header class="masthead">
+      <h1 class="wordmark"><a href="/" class="home">PULSE</a></h1>
+      <p class="tagline">Receipts — what Pulse detected, when, and on what evidence.</p>
+      <div class="status" id="status" data-state="idle">
+        <span class="dot"></span><span id="status-text">loading ledger…</span>
+      </div>
+    </header>
+
+    <main class="wide">
+      <section class="wall">
+        <div class="wall-head">
+          <h2>Detection ledger</h2>
+          <span class="wall-meta" id="ledger-meta">newest first</span>
+        </div>
+        <div class="table-scroll">
+          <table class="ledger">
+            <thead>
+              <tr>
+                <th>Detected at (UTC)</th>
+                <th>Type</th>
+                <th>Article</th>
+                <th class="num">Editors</th>
+                <th class="num">Edits/5m</th>
+                <th>Evidence</th>
+              </tr>
+            </thead>
+            <tbody id="ledger-body"></tbody>
+          </table>
+        </div>
+      </section>
+      <p class="note">
+        Detected-at timestamps are written once and never updated. Each row links to its
+        full evidence bundle — the gate numbers, the editors involved, and the sample
+        comments that produced the classification.
+      </p>
+    </main>
+
+    <footer>
+      <p>
+        Data:
+        <a href="https://wikitech.wikimedia.org/wiki/Event_Platform/EventStreams"
+          >Wikimedia EventStreams</a
+        >
+        — content © its contributors, CC-BY-SA 4.0. Pulse itself: MIT.
+      </p>
+    </footer>
+
+    <script type="module" src="/src/events.ts"></script>
+  </body>
+</html>

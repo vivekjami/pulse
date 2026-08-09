@@ -5,6 +5,7 @@
 //! variation and unknown/absent fields must never abort ingest.
 
 pub mod config;
+pub mod db;
 pub mod keys;
 
 use serde::{Deserialize, Serialize};
@@ -136,8 +137,14 @@ impl RcEvent {
 
     /// Anonymous edits self-identify: MediaWiki puts the IP in `user`.
     pub fn is_anon(&self) -> bool {
-        self.user.parse::<std::net::IpAddr>().is_ok()
+        is_anon_user(&self.user)
     }
+}
+
+/// True when a username is really an IP address — MediaWiki's marker for an
+/// anonymous editor. Gate 2 counts registered editors, so this is shared logic.
+pub fn is_anon_user(user: &str) -> bool {
+    user.parse::<std::net::IpAddr>().is_ok()
 }
 
 /// Typed events the detector emits. `Unclassified` is the honest default —
@@ -214,5 +221,13 @@ mod tests {
         )
         .unwrap();
         assert!(ev.is_anon());
+    }
+
+    #[test]
+    fn anon_detection_covers_ipv6_and_rejects_names() {
+        assert!(is_anon_user("203.0.113.9"));
+        assert!(is_anon_user("2001:db8::1"));
+        assert!(!is_anon_user("SomeEditor"));
+        assert!(!is_anon_user(""));
     }
 }

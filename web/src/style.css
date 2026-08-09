@@ -258,3 +258,264 @@ a.title:hover {
     display: none;
   }
 }
+
+/* ── Event cards + receipts ledger (Phase 2) ──────────────────────────────── */
+
+main.wide {
+  max-width: 72rem;
+}
+
+.home {
+  color: inherit;
+  text-decoration: none;
+}
+
+.cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.cards:empty {
+  display: none;
+}
+
+.card {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 0.85rem 1rem;
+  animation: slide-in 0.45s cubic-bezier(0.2, 0.9, 0.2, 1);
+}
+
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card {
+    animation: none;
+  }
+}
+
+.card.kind-death {
+  border-left-color: #c9d1d9;
+}
+.card.kind-disaster {
+  border-left-color: #f0883e;
+}
+.card.kind-sports {
+  border-left-color: #3fb950;
+}
+.card.kind-political {
+  border-left-color: #a371f7;
+}
+.card.kind-unclassified {
+  border-left-color: var(--muted);
+}
+
+.card-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.card-icon {
+  font-size: 0.95rem;
+  color: var(--ink);
+}
+
+.card-when {
+  margin-left: auto;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.card-title {
+  display: block;
+  margin: 0.35rem 0 0.5rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+a.card-title:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.card-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.fact {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.fact + .fact::before {
+  content: "· ";
+}
+
+.card-comment {
+  margin: 0.5rem 0 0;
+  padding-left: 0.6rem;
+  border-left: 2px solid var(--line);
+  font-size: 0.8rem;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.card-receipt {
+  display: inline-block;
+  margin-top: 0.6rem;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.card-receipt:hover {
+  text-decoration: underline;
+}
+
+.wall-head-right {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.ledger-link {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.ledger-link:hover {
+  text-decoration: underline;
+}
+
+/* Wide content scrolls inside its own container; the page never scrolls sideways. */
+.table-scroll {
+  overflow-x: auto;
+}
+
+table.ledger {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+table.ledger th,
+table.ledger td {
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid rgba(30, 37, 48, 0.6);
+  white-space: nowrap;
+}
+
+table.ledger th {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  background: rgba(10, 12, 16, 0.6);
+  position: sticky;
+  top: 0;
+}
+
+table.ledger td.mono {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+table.ledger td.num,
+table.ledger th.num {
+  text-align: right;
+}
+
+table.ledger a {
+  color: var(--ink);
+  text-decoration: none;
+}
+
+table.ledger a:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+td.kind {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+}
+
+td.kind-death {
+  color: #c9d1d9;
+}
+td.kind-disaster {
+  color: #f0883e;
+}
+td.kind-sports {
+  color: #3fb950;
+}
+td.kind-political {
+  color: #a371f7;
+}
+td.kind-unclassified {
+  color: var(--muted);
+}
+
+td.evidence {
+  max-width: 26rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--muted);
+}
+
+td.empty {
+  padding: 3rem 1rem;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--muted);
+  white-space: normal;
+}
+
+.badge.inline {
+  display: inline-block;
+  margin-left: 0.5rem;
+  border: none;
+  padding: 0;
+  color: var(--muted);
+  font-size: 0.66rem;
+}
+
+.note {
+  margin: 1rem 0 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+  line-height: 1.6;
+}

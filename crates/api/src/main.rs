@@ -11,13 +11,17 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
-use axum::extract::State;
+use axum::extract::{Path, Query, State};
+use axum::http::StatusCode;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::routing::get;
 use axum::{Json, Router};
 use common::keys;
 use futures_util::Stream;
+use serde::Deserialize;
 use serde_json::{json, Value};
+use sqlx::postgres::PgPool;
+use sqlx::Row;
 use tokio::sync::broadcast;
 use tower_http::cors::CorsLayer;
 
@@ -31,6 +35,10 @@ const BROADCAST_CAPACITY: usize = 1024;
 #[derive(Clone)]
 struct AppState {
     edits: broadcast::Sender<String>,
+    /// Confirmed bursts — a separate channel so a client that lags on the wall
+    /// never drops a receipt, which is the one frame type worth delivering.
+    confirmed: broadcast::Sender<String>,
+    pool: Option<PgPool>,
 }
 
 #[tokio::main]
@@ -42,12 +50,40 @@ async fn main() -> Result<()> {
     tracing::info!(db_wired, cache_wired, "cross-service env wiring");
 
     let (tx, _rx) = broadcast::channel::<String>(BROADCAST_CAPACITY);
-    let state = Arc::new(AppState { edits: tx.clone() });
+    let (ctx, _crx) = broadcast::channel::<String>(BROADCAST_CAPACITY);
 
-    // One reader for the whole process, regardless of client count.
+    // The receipts ledger is read-only here; the detector owns writes.
+    let pool = match common::config::database_url() {
+        Ok(url) => match common::db::connect(&url, 4).await {
+            Ok(pool) => {
+                // Idempotent — whichever of api/detector boots first wins.
+                if let Err(err) = common::db::ensure_schema(&pool).await {
+                    tracing::error!(error = %err, "schema ensure failed");
+                }
+                Some(pool)
+            }
+            Err(err) => {
+                tracing::error!(error = %err, "postgres unavailable — /v1/events will 503");
+                None
+            }
+        },
+        Err(err) => {
+            tracing::error!(%err, "no DATABASE_URL — /v1/events will 503");
+            None
+        }
+    };
+
+    let state = Arc::new(AppState {
+        edits: tx.clone(),
+        confirmed: ctx.clone(),
+        pool,
+    });
+
+    // One reader per stream for the whole process, regardless of client count.
     match common::config::valkey_url() {
         Ok(url) => {
-            tokio::spawn(pump_bus(url, tx));
+            tokio::spawn(pump_stream(url.clone(), keys::BUS_EDITS, tx));
+            tokio::spawn(pump_stream(url, keys::BUS_CONFIRMED, ctx));
         }
         Err(err) => tracing::error!(%err, "no VALKEY_URL — /v1/live will serve no frames"),
     }
@@ -56,6 +92,8 @@ async fn main() -> Result<()> {
         .route("/", get(root))
         .route("/healthz", get(healthz))
         .route("/v1/live", get(live))
+        .route("/v1/events", get(list_events))
+        .route("/v1/events/{id}", get(get_event))
         // The wall is public, read-only data; the SPA is on its own origin.
         .layer(CorsLayer::permissive())
         .with_state(state);
@@ -74,25 +112,29 @@ async fn main() -> Result<()> {
 ///
 /// Starts at `$` (the live edge): a browser opening the wall wants what is
 /// happening now, not a replay of the backlog the detector is still chewing.
-async fn pump_bus(url: String, tx: broadcast::Sender<String>) {
+async fn pump_stream(url: String, stream: &'static str, tx: broadcast::Sender<String>) {
     let mut backoff = Duration::from_secs(1);
     loop {
-        match pump_bus_once(&url, &tx).await {
-            Ok(()) => tracing::warn!("bus reader ended — reconnecting"),
-            Err(err) => tracing::error!(error = %err, "bus reader failed"),
+        match pump_stream_once(&url, stream, &tx).await {
+            Ok(()) => tracing::warn!(stream, "bus reader ended — reconnecting"),
+            Err(err) => tracing::error!(stream, error = %err, "bus reader failed"),
         }
         tokio::time::sleep(backoff).await;
         backoff = (backoff * 2).min(Duration::from_secs(30));
     }
 }
 
-async fn pump_bus_once(url: &str, tx: &broadcast::Sender<String>) -> Result<()> {
+async fn pump_stream_once(
+    url: &str,
+    stream_key: &str,
+    tx: &broadcast::Sender<String>,
+) -> Result<()> {
     let client = redis::Client::open(url).context("opening valkey client")?;
     let mut con = client
         .get_multiplexed_async_connection()
         .await
         .context("connecting to valkey")?;
-    tracing::info!("bus reader connected");
+    tracing::info!(stream = stream_key, "bus reader connected");
 
     let mut cursor = "$".to_string();
     loop {
@@ -102,7 +144,7 @@ async fn pump_bus_once(url: &str, tx: &broadcast::Sender<String>) -> Result<()> 
             .arg("COUNT")
             .arg(500)
             .arg("STREAMS")
-            .arg(keys::BUS_EDITS)
+            .arg(stream_key)
             .arg(&cursor)
             .query_async(&mut con)
             .await
@@ -133,8 +175,8 @@ async fn root() -> Json<Value> {
     Json(json!({
         "service": "pulse-api",
         "version": env!("CARGO_PKG_VERSION"),
-        "phase": 1,
-        "endpoints": ["/healthz", "/v1/live"],
+        "phase": 2,
+        "endpoints": ["/healthz", "/v1/live", "/v1/events", "/v1/events/:id"],
         "source": "https://stream.wikimedia.org/v2/stream/recentchange",
     }))
 }
@@ -148,33 +190,141 @@ async fn healthz() -> Json<Value> {
 async fn live(
     State(state): State<Arc<AppState>>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
-    let rx = state.edits.subscribe();
+    let edits = state.edits.subscribe();
+    let confirmed = state.confirmed.subscribe();
     tracing::debug!("sse client attached");
 
     // Sampling lives in the per-client stream so one slow browser cannot slow
-    // the bus reader or any other client.
+    // the bus reader or any other client. `confirmed` frames bypass the sampler
+    // entirely — they arrive a few times an hour and each one is the product of
+    // both gates, so dropping one to honour a frame-rate cap would be perverse.
     let stream = futures_util::stream::unfold(
-        (rx, Instant::now() - MIN_FRAME_INTERVAL),
-        |(mut rx, mut last)| async move {
+        (edits, confirmed, Instant::now() - MIN_FRAME_INTERVAL),
+        |(mut edits, mut confirmed, mut last)| async move {
             loop {
-                match rx.recv().await {
-                    Ok(payload) => {
-                        let now = Instant::now();
-                        if now.duration_since(last) < MIN_FRAME_INTERVAL {
-                            continue; // sample, don't queue
+                tokio::select! {
+                    biased;
+
+                    // Receipts first: never starved by wall traffic.
+                    res = confirmed.recv() => match res {
+                        Ok(payload) => {
+                            let event = Event::default().event("confirmed").data(payload);
+                            return Some((Ok(event), (edits, confirmed, last)));
                         }
-                        last = now;
-                        let event = Event::default().event("edit").data(payload);
-                        return Some((Ok(event), (rx, last)));
-                    }
-                    Err(broadcast::error::RecvError::Lagged(skipped)) => {
-                        tracing::debug!(skipped, "sse client lagged");
-                    }
-                    Err(broadcast::error::RecvError::Closed) => return None,
+                        Err(broadcast::error::RecvError::Lagged(skipped)) => {
+                            tracing::warn!(skipped, "client lagged on confirmed frames");
+                        }
+                        Err(broadcast::error::RecvError::Closed) => return None,
+                    },
+
+                    res = edits.recv() => match res {
+                        Ok(payload) => {
+                            let now = Instant::now();
+                            if now.duration_since(last) < MIN_FRAME_INTERVAL {
+                                continue; // sample, don't queue
+                            }
+                            last = now;
+                            let event = Event::default().event("edit").data(payload);
+                            return Some((Ok(event), (edits, confirmed, last)));
+                        }
+                        Err(broadcast::error::RecvError::Lagged(skipped)) => {
+                            tracing::debug!(skipped, "sse client lagged");
+                        }
+                        Err(broadcast::error::RecvError::Closed) => return None,
+                    },
                 }
             }
         },
     );
 
     Sse::new(stream).keep_alive(KeepAlive::default())
+}
+
+/// Query string for the receipts ledger.
+#[derive(Debug, Deserialize)]
+struct EventsQuery {
+    limit: Option<i64>,
+    kind: Option<String>,
+}
+
+/// `GET /v1/events?limit=&kind=` — the receipts ledger, newest first (§5).
+async fn list_events(
+    State(state): State<Arc<AppState>>,
+    Query(q): Query<EventsQuery>,
+) -> Result<Json<Value>, StatusCode> {
+    let pool = state.pool.as_ref().ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
+    // Clamped so a stray ?limit=1e9 cannot become a denial of service.
+    let limit = q.limit.unwrap_or(100).clamp(1, 500);
+
+    let rows = sqlx::query(
+        "SELECT id, article, kind, detected_at, peak_rate, distinct_eds, evidence
+           FROM events
+          WHERE ($1::text IS NULL OR kind = $1)
+          ORDER BY detected_at DESC
+          LIMIT $2",
+    )
+    .bind(q.kind.as_deref())
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+    .map_err(|err| {
+        tracing::error!(error = %err, "listing events");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let events: Vec<Value> = rows.iter().map(row_to_summary).collect();
+    Ok(Json(json!({ "count": events.len(), "events": events })))
+}
+
+/// `GET /v1/events/:id` — the full evidence bundle (§5).
+async fn get_event(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+) -> Result<Json<Value>, StatusCode> {
+    let pool = state.pool.as_ref().ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
+
+    let row = sqlx::query(
+        "SELECT id, article, kind, detected_at, gate1_at, gate2_at,
+                peak_rate, distinct_eds, evidence, wikidata_qid
+           FROM events WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|err| {
+        tracing::error!(error = %err, "fetching event");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?
+    .ok_or(StatusCode::NOT_FOUND)?;
+
+    let mut out = row_to_summary(&row);
+    out["gate1_at"] = json!(row
+        .try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("gate1_at")
+        .ok()
+        .flatten()
+        .map(|t| t.to_rfc3339()));
+    out["gate2_at"] = json!(row
+        .try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("gate2_at")
+        .ok()
+        .flatten()
+        .map(|t| t.to_rfc3339()));
+    out["wikidata_qid"] = json!(row
+        .try_get::<Option<String>, _>("wikidata_qid")
+        .ok()
+        .flatten());
+    Ok(Json(out))
+}
+
+fn row_to_summary(row: &sqlx::postgres::PgRow) -> Value {
+    let detected_at: chrono::DateTime<chrono::Utc> = row.get("detected_at");
+    json!({
+        "id": row.get::<i64, _>("id"),
+        "article": row.get::<String, _>("article"),
+        "kind": row.get::<String, _>("kind"),
+        // The permanent timestamp. Never updated — this is the proof.
+        "detected_at": detected_at.to_rfc3339(),
+        "peak_rate": row.try_get::<Option<f32>, _>("peak_rate").ok().flatten(),
+        "distinct_eds": row.try_get::<Option<i32>, _>("distinct_eds").ok().flatten(),
+        "evidence": row.get::<Value, _>("evidence"),
+    })
 }
