@@ -5,6 +5,8 @@
 //! stream samples it — we drop frames rather than queue them, so a slow client
 //! can never apply backpressure to the bus.
 
+mod game;
+
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -33,12 +35,15 @@ const MIN_FRAME_INTERVAL: Duration = Duration::from_millis(50);
 const BROADCAST_CAPACITY: usize = 1024;
 
 #[derive(Clone)]
-struct AppState {
+pub struct AppState {
     edits: broadcast::Sender<String>,
     /// Confirmed bursts — a separate channel so a client that lags on the wall
     /// never drops a receipt, which is the one frame type worth delivering.
     confirmed: broadcast::Sender<String>,
-    pool: Option<PgPool>,
+    pub pool: Option<PgPool>,
+    /// Multiplexed connection for the game endpoints' short commands. Separate
+    /// from the bus readers, which need a long response timeout for BLOCK.
+    pub redis: Option<redis::aio::MultiplexedConnection>,
 }
 
 #[tokio::main]
@@ -73,10 +78,31 @@ async fn main() -> Result<()> {
         }
     };
 
+    // A short-command connection for the game endpoints. The bus readers build
+    // their own with a long response timeout; mixing a BLOCK onto this one would
+    // stall every queue read behind it.
+    let redis = match common::config::valkey_url() {
+        Ok(url) => match redis::Client::open(url) {
+            Ok(client) => match client.get_multiplexed_async_connection().await {
+                Ok(con) => Some(con),
+                Err(err) => {
+                    tracing::error!(error = %err, "valkey unavailable for game endpoints");
+                    None
+                }
+            },
+            Err(err) => {
+                tracing::error!(error = %err, "bad VALKEY_URL");
+                None
+            }
+        },
+        Err(_) => None,
+    };
+
     let state = Arc::new(AppState {
         edits: tx.clone(),
         confirmed: ctx.clone(),
         pool,
+        redis,
     });
 
     // One reader per stream for the whole process, regardless of client count.
@@ -94,8 +120,31 @@ async fn main() -> Result<()> {
         .route("/v1/live", get(live))
         .route("/v1/events", get(list_events))
         .route("/v1/events/{id}", get(get_event))
-        // The wall is public, read-only data; the SPA is on its own origin.
-        .layer(CorsLayer::permissive())
+        // Phase 4 — conflict radar
+        .route("/v1/controversy", get(game::controversy))
+        .route("/v1/incidents", get(game::incidents))
+        // Phase 3 — Vandal Patrol
+        .route("/v1/players", axum::routing::post(game::create_player))
+        .route("/v1/me", get(game::me))
+        .route("/v1/patrol/queue", get(game::patrol_queue))
+        .route("/v1/calls", axum::routing::post(game::create_call))
+        .route("/v1/calls/{id}", get(game::get_call))
+        .route("/v1/leaderboard", get(game::leaderboard))
+        .route("/v1/flag", axum::routing::post(game::create_flag))
+        // Phase 5 — Call the Surge
+        .route("/v1/surge", axum::routing::post(game::create_bet))
+        .route("/v1/watchlist", get(game::watchlist))
+        // The SPA is on its own origin and the game needs its signed cookie to
+        // travel, so this cannot be CorsLayer::permissive(): a wildcard origin is
+        // rejected by browsers when credentials are included. Echo the request
+        // origin instead and allow credentials explicitly.
+        .layer(
+            CorsLayer::new()
+                .allow_origin(tower_http::cors::AllowOrigin::mirror_request())
+                .allow_methods(tower_http::cors::Any)
+                .allow_headers(tower_http::cors::Any)
+                .allow_credentials(true),
+        )
         .with_state(state);
 
     let port = common::config::port();
@@ -197,8 +246,15 @@ async fn root() -> Json<Value> {
     Json(json!({
         "service": "pulse-api",
         "version": env!("CARGO_PKG_VERSION"),
-        "phase": 2,
-        "endpoints": ["/healthz", "/v1/live", "/v1/events", "/v1/events/:id"],
+        "phase": 5,
+        "endpoints": [
+            "/healthz", "/v1/live",
+            "/v1/events", "/v1/events/:id",
+            "/v1/controversy", "/v1/incidents",
+            "/v1/players", "/v1/me", "/v1/patrol/queue",
+            "/v1/calls", "/v1/calls/:id", "/v1/leaderboard", "/v1/flag",
+            "/v1/surge", "/v1/watchlist"
+        ],
         "source": "https://stream.wikimedia.org/v2/stream/recentchange",
     }))
 }

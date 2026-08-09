@@ -19,3 +19,6 @@ tokio-stream = { version = "0.1.19", features = ["sync"] }
 tower-http = { version = "0.7.0", features = ["cors"] }
 futures-util = "0.3.33"
 sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "chrono", "json"] }
+hmac = "0.13.0"
+sha2 = "0.11.0"
+hex = "0.4.3"
